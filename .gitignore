@@ -1,0 +1,5 @@
+squad_data/*
+output/*
+GLUE_data/*
+absetact_data/*
+__pycache__/*
