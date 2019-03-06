@@ -1180,19 +1180,11 @@ class BertForSentenceExtraction_DeepHidden(PreTrainedBertModel):
         self.apply(self.init_bert_weights)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None):
-        # print('input_ids :',input_ids)
-        # print('token_type_ids :',token_type_ids)
-        # print('label :',labels)
         _, pooled_output = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
         pooled_output = self.dropout(pooled_output)
         hidden_state = self.dense(pooled_output)
-        # print(hidden_state)
         logits = self.classifier(hidden_state)
-        # print(logits)
         logits = F.softmax(logits)
-        # print(logits)
-        # print()
-        # input('press any key to continue...')
 
         if labels is not None:
             loss_fct = CrossEntropyLoss()

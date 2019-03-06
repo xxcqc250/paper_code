@@ -125,15 +125,11 @@ class MyDataProcessor(DataProcessor):
             end_pos = idx + window
         return start_pos,end_pos
 
-    def _create_examples(self,data,window=2):
+    def _create_examples(self,data,window=1):
         
         label = None
         all_examples = []
         for idx,ele in enumerate(data):
-
-            # 盡量讓資料平均
-            count_target = len(ele['target'])
-            count_nonTarget = 0
 
             context_index = [i for i in range(len(ele['context']))]
             random.shuffle(context_index)
@@ -145,29 +141,28 @@ class MyDataProcessor(DataProcessor):
                 if ele['context'][idx] in ele['target']:
                     label = 1
                     target_text = self.rm_punc(ele['context'][idx])
+                    
+                    start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
+                    doc_text = " ".join([ele['context'][n] for n in range(start_pos,end_pos)])
+                    doc_text = self.rm_punc(doc_text)
+
+                    all_examples.append(InputExample(doc_text,target_text,label))
+
+                else:
+
+                    label = 0
+                    target_text = self.rm_punc(ele['context'][idx])
 
                     start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
                     doc_text = " ".join([ele['context'][n] for n in range(start_pos,end_pos)])
                     doc_text = self.rm_punc(doc_text)
 
-                    all_examples.append(InputExample(target_text,doc_text,label))
-
-                else:
-                    count_nonTarget += 1
-                    if count_nonTarget <= count_target:
-                        label = 0
-                        target_text = self.rm_punc(ele['context'][idx])
-
-                        start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
-                        doc_text = " ".join([ele['context'][n] for n in range(start_pos,end_pos)])
-                        doc_text = self.rm_punc(doc_text)
-
-                        all_examples.append(InputExample(doc_text,target_text,label))
+                    all_examples.append(InputExample(doc_text,target_text,label))
 
 
         return all_examples
 
-    def _create_eval_examples(self,data,window=2):
+    def _create_eval_examples(self,data,window=1):
         label = None
         all_examples = []
         for idx,ele in enumerate(data):
@@ -392,6 +387,13 @@ def main():
                         type=str,
                         required=True,
                         help="Naming model and result") 
+    parser.add_argument("--use_last_model",
+                        action='store_true',
+                        help="Whether to run training.")
+    parser.add_argument("--use_last_model_path",
+                        default=None,
+                        type=str,
+                        help="Whether to run training.")
 
     args = parser.parse_args()
 
@@ -459,10 +461,19 @@ def main():
     # model = BertForSequenceClassification.from_pretrained(args.bert_model,
     #           cache_dir=PYTORCH_PRETRAINED_BERT_CACHE / 'distributed_{}'.format(args.local_rank),
     #           num_labels = num_labels)
-    model = BertForSentenceExtraction_DeepHidden.from_pretrained(args.bert_model,
+    if args.use_last_model:
+
+        # 載入之前的model
+        print('Use model :',args.use_last_model_path)
+        training_modelpath = args.use_last_model_path
+        model_state_dict = torch.load(training_modelpath)
+        model = BertForSentenceExtraction_DeepHidden.from_pretrained(args.bert_model, state_dict=model_state_dict)
+        
+    else:
+        print('Use Bert-base model')
+        model = BertForSentenceExtraction_DeepHidden.from_pretrained(args.bert_model,
               cache_dir=PYTORCH_PRETRAINED_BERT_CACHE / 'distributed_{}'.format(args.local_rank),
               num_labels = num_labels)
-    print(model)
 
     if args.fp16:
         model.half()
@@ -518,8 +529,8 @@ def main():
         except:
             train_features = convert_examples_to_features(
                 train_examples, label_list, args.max_seq_length, tokenizer)
-            with open("{}_{}_{}".format(args.data_dir,args.max_seq_length,args.train_batch_size), "wb") as writer:
-                pickle.dump(train_features, writer)
+            # with open("{}_{}_{}".format(args.data_dir,args.max_seq_length,args.train_batch_size), "wb") as writer:
+            #     pickle.dump(train_features, writer)
         logger.info("***** Running training *****")
         logger.info("  Num examples = %d", len(train_examples))
         logger.info("  Batch size = %d", args.train_batch_size)

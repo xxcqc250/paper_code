@@ -1,19 +1,9 @@
-# coding=utf-8
-# Copyright 2018 The Google AI Language Team Authors and The HugginFace Inc. team.
-# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-"""BERT finetuning runner."""
+###
+# 平衡label數量，使用binhong方式平衡 :
+# 
+# 一篇文章，如果key sentence有n句，找另外n句非key sentence當作input
+# 
+###
 
 from __future__ import absolute_import
 from __future__ import division
@@ -109,7 +99,7 @@ class MyDataProcessor(DataProcessor):
         return [0, 1]
 
     def rm_punc(self,text):
-        return re.sub("[\s+`!#$%&\'()*+,-/:;<=>?@[\\]^_`{|}~\!\/_,$%^*(+\"\')]+|[+——()?【】“”！，。？、~@#￥%……&*（）]+'", " ",text).strip()
+        return re.sub("[\s+`!#$%&\'()*+,-/:;<=>?@[\\]^_`{|}~\!\/_,$%^*(+\"\')]+|[+——()?【】“”！，。？、~@#￥%……&*（）]+'", " ",text).strip() + '.'
 
     def get_pos(self,idx,window,context_size):
         start_pos = None
@@ -147,10 +137,9 @@ class MyDataProcessor(DataProcessor):
                     target_text = self.rm_punc(ele['context'][idx])
 
                     start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
-                    doc_text = " ".join([ele['context'][n] for n in range(start_pos,end_pos)])
-                    doc_text = self.rm_punc(doc_text)
+                    doc_text = " ".join([self.rm_punc(ele['context'][n]) for n in range(start_pos,end_pos)])
 
-                    all_examples.append(InputExample(target_text,doc_text,label))
+                    all_examples.append(InputExample(doc_text,target_text,label))
 
                 else:
                     count_nonTarget += 1
@@ -159,15 +148,14 @@ class MyDataProcessor(DataProcessor):
                         target_text = self.rm_punc(ele['context'][idx])
 
                         start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
-                        doc_text = " ".join([ele['context'][n] for n in range(start_pos,end_pos)])
-                        doc_text = self.rm_punc(doc_text)
+                        doc_text = " ".join([self.rm_punc(ele['context'][n]) for n in range(start_pos,end_pos)])
 
                         all_examples.append(InputExample(doc_text,target_text,label))
 
 
         return all_examples
 
-    def _create_eval_examples(self,data,window=2):
+    def _create_eval_examples(self,data,window=1):
         label = None
         all_examples = []
         for idx,ele in enumerate(data):
@@ -184,8 +172,7 @@ class MyDataProcessor(DataProcessor):
                     target_text = self.rm_punc(ele['context'][idx])
                     
                     start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
-                    doc_text = " ".join([ele['context'][n] for n in range(start_pos,end_pos)])
-                    doc_text = self.rm_punc(doc_text)
+                    doc_text = " ".join([self.rm_punc(ele['context'][n]) for n in range(start_pos,end_pos)])
 
                     all_examples.append(InputExample(doc_text,target_text,label))
 
@@ -195,8 +182,7 @@ class MyDataProcessor(DataProcessor):
                     target_text = self.rm_punc(ele['context'][idx])
 
                     start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
-                    doc_text = " ".join([ele['context'][n] for n in range(start_pos,end_pos)])
-                    doc_text = self.rm_punc(doc_text)
+                    doc_text = " ".join([self.rm_punc(ele['context'][n]) for n in range(start_pos,end_pos)])
 
                     all_examples.append(InputExample(doc_text,target_text,label))
 
@@ -392,6 +378,13 @@ def main():
                         type=str,
                         required=True,
                         help="Naming model and result") 
+    parser.add_argument("--use_last_model",
+                        action='store_true',
+                        help="Whether to run training.")
+    parser.add_argument("--use_last_model_path",
+                        default=None,
+                        type=str,
+                        help="Whether to run training.")
 
     args = parser.parse_args()
 
@@ -459,10 +452,18 @@ def main():
     # model = BertForSequenceClassification.from_pretrained(args.bert_model,
     #           cache_dir=PYTORCH_PRETRAINED_BERT_CACHE / 'distributed_{}'.format(args.local_rank),
     #           num_labels = num_labels)
-    model = BertForSentenceExtraction_DeepHidden.from_pretrained(args.bert_model,
+    if args.use_last_model:
+        # 載入之前的model
+        print('Use model :',args.use_last_model_path)
+        training_modelpath = args.use_last_model_path
+        model_state_dict = torch.load(training_modelpath)
+        model = BertForSentenceExtraction_DeepHidden.from_pretrained(args.bert_model, state_dict=model_state_dict)
+        
+    else:
+        print('Use Bert-base model')
+        model = BertForSentenceExtraction_DeepHidden.from_pretrained(args.bert_model,
               cache_dir=PYTORCH_PRETRAINED_BERT_CACHE / 'distributed_{}'.format(args.local_rank),
               num_labels = num_labels)
-    print(model)
 
     if args.fp16:
         model.half()
@@ -518,8 +519,8 @@ def main():
         except:
             train_features = convert_examples_to_features(
                 train_examples, label_list, args.max_seq_length, tokenizer)
-            with open("{}_{}_{}".format(args.data_dir,args.max_seq_length,args.train_batch_size), "wb") as writer:
-                pickle.dump(train_features, writer)
+            # with open("{}_{}_{}".format(args.data_dir,args.max_seq_length,args.train_batch_size), "wb") as writer:
+            #     pickle.dump(train_features, writer)
         logger.info("***** Running training *****")
         logger.info("  Num examples = %d", len(train_examples))
         logger.info("  Batch size = %d", args.train_batch_size)
@@ -577,18 +578,24 @@ def main():
                     optimizer.zero_grad()
                     global_step += 1
 
-    # Save a trained model
-    model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
-    output_model_file = os.path.join(args.output_dir, "pytorch_model_{}.bin".format(args.output_model_name))
-    output_model_loss_file = os.path.join(args.output_dir, "model_loss_{}.txt".format(args.output_model_name))
+    
     
     if args.do_train:
+        # Save a trained model
+        model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
+        output_model_file = os.path.join(args.output_dir, "pytorch_model_{}.bin".format(args.output_model_name))
+        output_model_loss_file = os.path.join(args.output_dir, "model_loss_{}.txt".format(args.output_model_name))
+        logger.info("Saving model : {}".format(output_model_file))
         torch.save(model_to_save.state_dict(), output_model_file)
         json.dump(result, open(output_model_loss_file, "w"))
 
+    if args.do_eval and args.do_train != True:
+        output_model_file = args.use_last_model_path
+        logger.info("***** Only Do Evaluation *****")
+        logger.info("Loading model : {}".format(output_model_file))
+
     # Load a trained model that you have fine-tuned
     model_state_dict = torch.load(output_model_file)
-    # model = BertForSequenceClassification.from_pretrained(args.bert_model, state_dict=model_state_dict, num_labels=num_labels)
     model = BertForSentenceExtraction_DeepHidden.from_pretrained(args.bert_model, state_dict=model_state_dict, num_labels=num_labels)
     model.to(device)
 
@@ -640,7 +647,7 @@ def main():
             nb_eval_steps += 1
 
         # print(eval_predict)
-        print(recall_score(eval_true, eval_predict, average=None))
+        print("Recall :",recall_score(eval_true, eval_predict, average=None))
         eval_loss = eval_loss / nb_eval_steps
         eval_accuracy = eval_accuracy / nb_eval_examples
         loss = tr_loss/nb_tr_steps if args.do_train else None
@@ -649,20 +656,15 @@ def main():
                   'global_step': global_step,
                   'loss': loss}
 
-        output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
+        output_eval_file = os.path.join(args.output_dir, "eval_results_{}.txt".format(args.output_model_name))
         with open(output_eval_file, "w") as writer:
             logger.info("***** Eval results *****")
+            logger.info("Recall : {}".format(recall_score(eval_true, eval_predict, average=None)))
             for key in sorted(result.keys()):
                 logger.info("  %s = %s", key, str(result[key]))
                 writer.write("%s = %s\n" % (key, str(result[key])))
+            writer.write("Recall : {}".format(recall_score(eval_true, eval_predict, average=None)))
 
-        predict_and_true_label = {}
-        predict_and_true_label['eval_true'] = eval_true
-        predict_and_true_label['eval_predict'] = eval_predict
-
-        output_eval_file = os.path.join(args.output_dir, "predict_and_true_label.json")
-        with open(output_eval_file,'w') as f:
-            json.dump(predict_and_true_label,f)
 
 if __name__ == "__main__":
     main()
