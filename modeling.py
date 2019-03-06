@@ -894,19 +894,26 @@ class BertForSequenceClassification(PreTrainedBertModel):
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, num_labels)
+
         self.apply(self.init_bert_weights)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None):
+        # print('input_ids :',input_ids)
+        # print('token_type_ids :',token_type_ids)
+        # print('label :',labels)
         _, pooled_output = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
+        # print(pooled_output)
         pooled_output = self.dropout(pooled_output)
         logits = self.classifier(pooled_output)
         logits = F.softmax(logits)
-
+        # print(logits)
+        # print(labels)
+        
         if labels is not None:
             loss_fct = CrossEntropyLoss()
             loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             # print(logits.view(-1, self.num_labels), labels.view(-1))
-            # print(loss)
+            # print('loss :',loss)
             # input()
             return loss
         else:
@@ -1149,6 +1156,52 @@ class BertForGenerative(PreTrainedBertModel):
             return prediction_scores      
 
 
+class BertForSentenceExtraction_DeepHidden(PreTrainedBertModel):
+    def __init__(self, config, num_labels=2):
+        super(BertForSentenceExtraction_DeepHidden, self).__init__(config)
+        self.num_labels = num_labels
+        self.bert = BertModel(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.dense = nn.Sequential(
+                nn.Linear(config.hidden_size, 400),
+                nn.ReLU(),
+                nn.Dropout(0.3),
+                nn.Linear(400, 200),
+                nn.ReLU(),
+                nn.Dropout(0.3),
+                nn.Linear(200, 50),
+                nn.ReLU(),
+                nn.Dropout(0.3)
+            )
+        # self.hidden_1 = nn.Linear(config.hidden_size, 400)
+        # self.hidden_2 = nn.Linear(400, 200)
+        # self.hidden_3 = nn.Linear(200, 50)
+        self.classifier = nn.Linear(50, num_labels)
+        self.apply(self.init_bert_weights)
+
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None):
+        # print('input_ids :',input_ids)
+        # print('token_type_ids :',token_type_ids)
+        # print('label :',labels)
+        _, pooled_output = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
+        pooled_output = self.dropout(pooled_output)
+        hidden_state = self.dense(pooled_output)
+        # print(hidden_state)
+        logits = self.classifier(hidden_state)
+        # print(logits)
+        logits = F.softmax(logits)
+        # print(logits)
+        # print()
+        # input('press any key to continue...')
+
+        if labels is not None:
+            loss_fct = CrossEntropyLoss()
+            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            return loss
+        else:
+            return logits
+
+
 class BertForSentenceExtraction(PreTrainedBertModel):
     def __init__(self, config, num_labels=2):
         super(BertForSentenceExtraction, self).__init__(config)
@@ -1180,33 +1233,3 @@ class BertForSentenceExtraction(PreTrainedBertModel):
         else:
             return logits
 
-class GettingBertEmbedding(PreTrainedBertModel):
-    def __init__(self, config, num_labels=2):
-        super(BertForSentenceExtraction, self).__init__(config)
-        self.num_labels = num_labels
-        self.bert = BertModel(config)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.classifier = nn.Linear(config.hidden_size, num_labels)
-        self.apply(self.init_bert_weights)
-
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None):
-        # 產生Sentence vector
-        _, sentence_pooled_output = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
-        sentence_pooled_output = self.dropout(sentence_pooled_output)
-
-        # 產生Document vector
-        _, doc_pooled_output = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
-        doc_pooled_output = self.dropout(doc_pooled_output)
-
-        # 將 Doc,Sentence vector concat起來
-        
-
-        # 最後丟入分類器分類
-        logits = self.classifier(pooled_output)
-
-        if labels is not None:
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-            return loss
-        else:
-            return logits

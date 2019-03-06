@@ -3,3 +3,5 @@ output/*
 GLUE_data/*
 absetact_data/*
 __pycache__/*
+BBC_News_Summary/*
+testing_output/*

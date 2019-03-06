@@ -24,8 +24,8 @@ import os
 import logging
 import argparse
 import random
+import pickle
 from tqdm import tqdm, trange
-import json
 
 import numpy as np
 import torch
@@ -38,42 +38,22 @@ from pytorch_pretrained_bert.optimization import BertAdam, warmup_linear
 from pytorch_pretrained_bert.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
 from modeling import BertForSentenceExtraction_DeepHidden,BertForSequenceClassification
 
+import json
+import random
+from sklearn.metrics import recall_score
+import re
+
 logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt = '%m/%d/%Y %H:%M:%S',
                     level = logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 class InputExample(object):
-    """A single training/test example for simple sequence classification."""
-
-    def __init__(self, guid, text_a, text_b=None, label=None):
-        """Constructs a InputExample.
-
-        Args:
-            guid: Unique id for the example.
-            text_a: string. The untokenized text of the first sequence. For single
-            sequence tasks, only this sequence must be specified.
-            text_b: (Optional) string. The untokenized text of the second sequence.
-            Only must be specified for sequence pair tasks.
-            label: (Optional) string. The label of the example. This should be
-            specified for train and dev examples, but not for test examples.
-        """
-        self.guid = guid
-        self.text_a = text_a
-        self.text_b = text_b
+    def __init__(self,doc_text,target_text,label):
+        self.target_text = target_text
+        self.doc_text = doc_text
         self.label = label
-
-
-class InputFeatures(object):
-    """A single set of features of data."""
-
-    def __init__(self, input_ids, input_mask, segment_ids, label_id):
-        self.input_ids = input_ids
-        self.input_mask = input_mask
-        self.segment_ids = segment_ids
-        self.label_id = label_id
-
+        
 
 class DataProcessor(object):
     """Base class for data converters for sequence classification data sets."""
@@ -101,121 +81,144 @@ class DataProcessor(object):
             return lines
 
 
-class MrpcProcessor(DataProcessor):
-    """Processor for the MRPC data set (GLUE version)."""
+class InputFeatures(object):
+    """A single set of features of data."""
+
+    def __init__(self, input_ids, input_mask, segment_ids, label_id):
+        self.input_ids = input_ids
+        self.input_mask = input_mask
+        self.segment_ids = segment_ids
+        self.label_id = label_id
+
+
+class MyDataProcessor(DataProcessor):
 
     def get_train_examples(self, data_dir):
-        """See base class."""
-        logger.info("LOOKING AT {}".format(os.path.join(data_dir, "train.tsv")))
-        return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
+        logger.info("LOADING TRAINING DATA : {}".format(data_dir))
+        with open(data_dir,'r') as f:
+            data = json.load(f)
+        return self._create_examples(data)
 
     def get_dev_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
+        logger.info("LOADING EVALUATION DATA : {}".format(data_dir))
+        with open(data_dir,'r') as f:
+            data = json.load(f)
+        return self._create_eval_examples(data)
 
     def get_labels(self):
-        """See base class."""
-        return ["0", "1"]
+        return [0, 1]
 
-    def _create_examples(self, lines, set_type):
-        """Creates examples for the training and dev sets."""
-        examples = []
-        for (i, line) in enumerate(lines):
-            if i == 0:
-                continue
-            guid = "%s-%s" % (set_type, i)
-            text_a = line[3]
-            text_b = line[4]
-            label = line[0]
-            examples.append(
-                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
-        return examples
+    def rm_punc(self,text):
+        return re.sub("[\s+`!#$%&\'()*+,-/:;<=>?@[\\]^_`{|}~\!\/_,$%^*(+\"\')]+|[+——()?【】“”！，。？、~@#￥%……&*（）]+'", " ",text).strip()
+
+    def get_pos(self,idx,window,context_size):
+        start_pos = None
+        end_pos = None  
+        if idx - window < 0:
+            start_pos = 0
+        else:
+            start_pos = idx - window
+
+        if idx + window > context_size:
+            end_pos = context_size
+        else:
+            end_pos = idx + window
+        return start_pos,end_pos
+
+    def _create_examples(self,data,window=2):
+        
+        label = None
+        all_examples = []
+        for idx,ele in enumerate(data):
+
+            # 盡量讓資料平均
+            count_target = len(ele['target'])
+            count_nonTarget = 0
+
+            context_index = [i for i in range(len(ele['context']))]
+            random.shuffle(context_index)
+
+            for idx in context_index:
+                start_pos = None
+                end_pos = None
+
+                if ele['context'][idx] in ele['target']:
+                    label = 1
+                    target_text = self.rm_punc(ele['context'][idx])
+
+                    start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
+                    doc_text = " ".join([ele['context'][n] for n in range(start_pos,end_pos)])
+                    doc_text = self.rm_punc(doc_text)
+
+                    all_examples.append(InputExample(target_text,doc_text,label))
+
+                else:
+                    count_nonTarget += 1
+                    if count_nonTarget <= count_target:
+                        label = 0
+                        target_text = self.rm_punc(ele['context'][idx])
+
+                        start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
+                        doc_text = " ".join([ele['context'][n] for n in range(start_pos,end_pos)])
+                        doc_text = self.rm_punc(doc_text)
+
+                        all_examples.append(InputExample(doc_text,target_text,label))
 
 
-class MnliProcessor(DataProcessor):
-    """Processor for the MultiNLI data set (GLUE version)."""
+        return all_examples
 
-    def get_train_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
+    def _create_eval_examples(self,data,window=2):
+        label = None
+        all_examples = []
+        for idx,ele in enumerate(data):
 
-    def get_dev_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "dev_matched.tsv")),
-            "dev_matched")
+            context_index = [i for i in range(len(ele['context']))]
+            random.shuffle(context_index)
 
-    def get_labels(self):
-        """See base class."""
-        return ["contradiction", "entailment", "neutral"]
+            for idx in context_index:
+                start_pos = None
+                end_pos = None
 
-    def _create_examples(self, lines, set_type):
-        """Creates examples for the training and dev sets."""
-        examples = []
-        for (i, line) in enumerate(lines):
-            if i == 0:
-                continue
-            guid = "%s-%s" % (set_type, line[0])
-            text_a = line[8]
-            text_b = line[9]
-            label = line[-1]
-            examples.append(
-                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
-        return examples
+                if ele['context'][idx] in ele['target']:
+                    label = 1
+                    target_text = self.rm_punc(ele['context'][idx])
+                    
+                    start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
+                    doc_text = " ".join([ele['context'][n] for n in range(start_pos,end_pos)])
+                    doc_text = self.rm_punc(doc_text)
+
+                    all_examples.append(InputExample(target_text,doc_text,label))
+
+                else:
+
+                    label = 0
+                    target_text = self.rm_punc(ele['context'][idx])
+
+                    start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
+                    doc_text = " ".join([ele['context'][n] for n in range(start_pos,end_pos)])
+                    doc_text = self.rm_punc(doc_text)
+
+                    all_examples.append(InputExample(doc_text,target_text,label))
 
 
-class ColaProcessor(DataProcessor):
-    """Processor for the CoLA data set (GLUE version)."""
+        return all_examples
 
-    def get_train_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
 
-    def get_dev_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
 
-    def get_labels(self):
-        """See base class."""
-        return ["0", "1"]
-
-    def _create_examples(self, lines, set_type):
-        """Creates examples for the training and dev sets."""
-        examples = []
-        for (i, line) in enumerate(lines):
-            guid = "%s-%s" % (set_type, i)
-            text_a = line[3]
-            label = line[1]
-            examples.append(
-                InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
-        return examples
 
 
 def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer):
     """Loads a data file into a list of `InputBatch`s."""
 
     label_map = {label : i for i, label in enumerate(label_list)}
-
+    
+    print(label_map)
     features = []
-    for (ex_index, example) in enumerate(examples):
-        tokens_a = tokenizer.tokenize(example.text_a)
-
-        tokens_b = None
-        if example.text_b:
-            tokens_b = tokenizer.tokenize(example.text_b)
-            # Modifies `tokens_a` and `tokens_b` in place so that the total
-            # length is less than the specified length.
-            # Account for [CLS], [SEP], [SEP] with "- 3"
-            _truncate_seq_pair(tokens_a, tokens_b, max_seq_length - 3)
-        else:
-            # Account for [CLS] and [SEP] with "- 2"
-            if len(tokens_a) > max_seq_length - 2:
-                tokens_a = tokens_a[:(max_seq_length - 2)]
+    logging_count = 0
+    for example in tqdm(examples,desc='Convert To Features'):
+        tokens_doc = tokenizer.tokenize(example.doc_text)
+        tokens_sentence = tokenizer.tokenize(example.target_text)
+        _truncate_seq_pair(tokens_sentence, tokens_doc, max_seq_length - 3)
 
         # The convention in BERT is:
         # (a) For sequence pairs:
@@ -235,12 +238,12 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
         # For classification tasks, the first vector (corresponding to [CLS]) is
         # used as as the "sentence vector". Note that this only makes sense because
         # the entire model is fine-tuned.
-        tokens = ["[CLS]"] + tokens_a + ["[SEP]"]
+        tokens = ["[CLS]"] + tokens_sentence + ["[SEP]"]
         segment_ids = [0] * len(tokens)
 
-        if tokens_b:
-            tokens += tokens_b + ["[SEP]"]
-            segment_ids += [1] * (len(tokens_b) + 1)
+        if tokens_doc:
+            tokens += tokens_doc + ["[SEP]"]
+            segment_ids += [1] * (len(tokens_doc) + 1)
 
         input_ids = tokenizer.convert_tokens_to_ids(tokens)
 
@@ -259,9 +262,9 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
         assert len(segment_ids) == max_seq_length
 
         label_id = label_map[example.label]
-        if ex_index < 5:
+        if logging_count < 5:
+            logging_count += 1
             logger.info("*** Example ***")
-            logger.info("guid: %s" % (example.guid))
             logger.info("tokens: %s" % " ".join(
                     [str(x) for x in tokens]))
             logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
@@ -311,11 +314,7 @@ def main():
                         help="Bert pre-trained model selected in the list: bert-base-uncased, "
                         "bert-large-uncased, bert-base-cased, bert-large-cased, bert-base-multilingual-uncased, "
                         "bert-base-multilingual-cased, bert-base-chinese.")
-    parser.add_argument("--task_name",
-                        default=None,
-                        type=str,
-                        required=True,
-                        help="The name of the task to train.")
+
     parser.add_argument("--output_dir",
                         default=None,
                         type=str,
@@ -323,6 +322,10 @@ def main():
                         help="The output directory where the model predictions and checkpoints will be written.")
 
     ## Other parameters
+    parser.add_argument("--eval_data_dir",
+                        default=None,
+                        type=str,
+                        help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
     parser.add_argument("--max_seq_length",
                         default=128,
                         type=int,
@@ -343,7 +346,7 @@ def main():
                         type=int,
                         help="Total batch size for training.")
     parser.add_argument("--eval_batch_size",
-                        default=8,
+                        default=5,
                         type=int,
                         help="Total batch size for eval.")
     parser.add_argument("--learning_rate",
@@ -382,21 +385,20 @@ def main():
                         help="Loss scaling to improve fp16 numeric stability. Only used when fp16 set to True.\n"
                              "0 (default value): dynamic loss scaling.\n"
                              "Positive power of 2: static loss scaling value.\n")
+    parser.add_argument("--gpu_device", 
+                        type=str,
+                        help="use gpu device number") 
+    parser.add_argument("--output_model_name", 
+                        type=str,
+                        required=True,
+                        help="Naming model and result") 
 
     args = parser.parse_args()
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-    processors = {
-        "cola": ColaProcessor,
-        "mnli": MnliProcessor,
-        "mrpc": MrpcProcessor,
-    }
+    
 
-    num_labels_task = {
-        "cola": 2,
-        "mnli": 3,
-        "mrpc": 2,
-    }
+    if args.gpu_device != None:
+        os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_device
 
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
@@ -425,17 +427,19 @@ def main():
     if not args.do_train and not args.do_eval:
         raise ValueError("At least one of `do_train` or `do_eval` must be True.")
 
-    if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train:
-        raise ValueError("Output directory ({}) already exists and is not empty.".format(args.output_dir))
+    # if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train:
+    #     raise ValueError("Output directory ({}) already exists and is not empty.".format(args.output_dir))
+
+    if args.do_train and "pytorch_model_{}.bin".format(args.output_model_name) in os.listdir(args.output_dir):
+        raise ValueError("Output model name (pytorch_model_{}.bin) already exists.".format(args.output_model_name))
     os.makedirs(args.output_dir, exist_ok=True)
 
-    task_name = args.task_name.lower()
+    
 
-    if task_name not in processors:
-        raise ValueError("Task not found: %s" % (task_name))
 
-    processor = processors[task_name]()
-    num_labels = num_labels_task[task_name]
+
+    processor = MyDataProcessor()
+    num_labels = 2
     label_list = processor.get_labels()
 
     tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case=args.do_lower_case)
@@ -444,15 +448,22 @@ def main():
     num_train_optimization_steps = None
     if args.do_train:
         train_examples = processor.get_train_examples(args.data_dir)
+        
         num_train_optimization_steps = int(
             len(train_examples) / args.train_batch_size / args.gradient_accumulation_steps) * args.num_train_epochs
         if args.local_rank != -1:
             num_train_optimization_steps = num_train_optimization_steps // torch.distributed.get_world_size()
 
     # Prepare model
-    model = BertForSequenceClassification.from_pretrained(args.bert_model,
+    ## 使用pre-train model
+    # model = BertForSequenceClassification.from_pretrained(args.bert_model,
+    #           cache_dir=PYTORCH_PRETRAINED_BERT_CACHE / 'distributed_{}'.format(args.local_rank),
+    #           num_labels = num_labels)
+    model = BertForSentenceExtraction_DeepHidden.from_pretrained(args.bert_model,
               cache_dir=PYTORCH_PRETRAINED_BERT_CACHE / 'distributed_{}'.format(args.local_rank),
               num_labels = num_labels)
+    print(model)
+
     if args.fp16:
         model.half()
     model.to(device)
@@ -499,8 +510,16 @@ def main():
     nb_tr_steps = 0
     tr_loss = 0
     if args.do_train:
-        train_features = convert_examples_to_features(
-            train_examples, label_list, args.max_seq_length, tokenizer)
+        try:
+            print("LOADING DATA : {}".format(args.data_dir,args.max_seq_length,args.train_batch_size))
+            with open("{}_{}_{}".format(args.data_dir,args.max_seq_length,args.train_batch_size), "rb") as reader:
+                train_features = pickle.load(reader)
+            print('LOADING OK.')
+        except:
+            train_features = convert_examples_to_features(
+                train_examples, label_list, args.max_seq_length, tokenizer)
+            with open("{}_{}_{}".format(args.data_dir,args.max_seq_length,args.train_batch_size), "wb") as writer:
+                pickle.dump(train_features, writer)
         logger.info("***** Running training *****")
         logger.info("  Num examples = %d", len(train_examples))
         logger.info("  Batch size = %d", args.train_batch_size)
@@ -518,13 +537,14 @@ def main():
 
         result = []
         model.train()
-        for _ in trange(int(args.num_train_epochs), desc="Epoch"):
+        for epoch in trange(int(args.num_train_epochs), desc="Epoch"):
             tr_loss = 0
-            local_loss = 0 # ...
+            local_loss = 0
             nb_tr_examples, nb_tr_steps = 0, 0
             for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
                 batch = tuple(t.to(device) for t in batch)
                 input_ids, input_mask, segment_ids, label_ids = batch
+                loss = 0
                 loss = model(input_ids, segment_ids, input_mask, label_ids)
                 if n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
@@ -540,11 +560,12 @@ def main():
                 local_loss += loss.item()
                 nb_tr_examples += input_ids.size(0)
                 nb_tr_steps += 1
-                if step % 20 == 0:
-                    tmp = {'step': step, 'loss': local_loss/20.00}
+                if step % 100 == 0:
+                    tmp = {'epoch': epoch, 'step': step, 'loss': local_loss/100.00}
                     result.append(tmp)
                     print(tmp)
                     local_loss = 0
+
                 if (step + 1) % args.gradient_accumulation_steps == 0:
                     if args.fp16:
                         # modify learning rate with special warm up BERT uses
@@ -558,19 +579,21 @@ def main():
 
     # Save a trained model
     model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
-    output_model_file = os.path.join(args.output_dir, "pytorch_model.bin")
-    output_model_loss_file = os.path.join(args.output_dir, "model_loss_history.txt")
+    output_model_file = os.path.join(args.output_dir, "pytorch_model_{}.bin".format(args.output_model_name))
+    output_model_loss_file = os.path.join(args.output_dir, "model_loss_{}.txt".format(args.output_model_name))
+    
     if args.do_train:
         torch.save(model_to_save.state_dict(), output_model_file)
         json.dump(result, open(output_model_loss_file, "w"))
 
     # Load a trained model that you have fine-tuned
     model_state_dict = torch.load(output_model_file)
-    model = BertForSequenceClassification.from_pretrained(args.bert_model, state_dict=model_state_dict, num_labels=num_labels)
+    # model = BertForSequenceClassification.from_pretrained(args.bert_model, state_dict=model_state_dict, num_labels=num_labels)
+    model = BertForSentenceExtraction_DeepHidden.from_pretrained(args.bert_model, state_dict=model_state_dict, num_labels=num_labels)
     model.to(device)
 
     if args.do_eval and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
-        eval_examples = processor.get_dev_examples(args.data_dir)
+        eval_examples = processor.get_dev_examples(args.eval_data_dir)
         eval_features = convert_examples_to_features(
             eval_examples, label_list, args.max_seq_length, tokenizer)
         logger.info("***** Running evaluation *****")
@@ -588,12 +611,17 @@ def main():
         model.eval()
         eval_loss, eval_accuracy = 0, 0
         nb_eval_steps, nb_eval_examples = 0, 0
- 
+
+        eval_predict = []
+        eval_true = []
         for input_ids, input_mask, segment_ids, label_ids in tqdm(eval_dataloader, desc="Evaluating"):
+            eval_true += label_ids.tolist()
+
             input_ids = input_ids.to(device)
             input_mask = input_mask.to(device)
             segment_ids = segment_ids.to(device)
             label_ids = label_ids.to(device)
+
 
             with torch.no_grad():
                 tmp_eval_loss = model(input_ids, segment_ids, input_mask, label_ids)
@@ -601,7 +629,9 @@ def main():
 
             logits = logits.detach().cpu().numpy()
             label_ids = label_ids.to('cpu').numpy()
+
             tmp_eval_accuracy = accuracy(logits, label_ids)
+            eval_predict += np.argmax(logits, axis=1).tolist()
 
             eval_loss += tmp_eval_loss.mean().item()
             eval_accuracy += tmp_eval_accuracy
@@ -609,6 +639,8 @@ def main():
             nb_eval_examples += input_ids.size(0)
             nb_eval_steps += 1
 
+        # print(eval_predict)
+        print(recall_score(eval_true, eval_predict, average=None))
         eval_loss = eval_loss / nb_eval_steps
         eval_accuracy = eval_accuracy / nb_eval_examples
         loss = tr_loss/nb_tr_steps if args.do_train else None
@@ -623,6 +655,14 @@ def main():
             for key in sorted(result.keys()):
                 logger.info("  %s = %s", key, str(result[key]))
                 writer.write("%s = %s\n" % (key, str(result[key])))
+
+        predict_and_true_label = {}
+        predict_and_true_label['eval_true'] = eval_true
+        predict_and_true_label['eval_predict'] = eval_predict
+
+        output_eval_file = os.path.join(args.output_dir, "predict_and_true_label.json")
+        with open(output_eval_file,'w') as f:
+            json.dump(predict_and_true_label,f)
 
 if __name__ == "__main__":
     main()
