@@ -83,17 +83,17 @@ class InputFeatures(object):
 
 class MyDataProcessor(DataProcessor):
 
-    def get_train_examples(self, data_dir):
+    def get_train_examples(self, data_dir, window_size=2):
         logger.info("LOADING TRAINING DATA : {}".format(data_dir))
         with open(data_dir,'r') as f:
             data = json.load(f)
-        return self._create_examples(data)
+        return self._create_examples(data,window_size)
 
-    def get_dev_examples(self, data_dir):
+    def get_dev_examples(self, data_dir, winsdw_size=2):
         logger.info("LOADING EVALUATION DATA : {}".format(data_dir))
         with open(data_dir,'r') as f:
             data = json.load(f)
-        return self._create_eval_examples(data)
+        return self._create_eval_examples(data,window_size)
 
     def get_labels(self):
         return [0, 1]
@@ -288,6 +288,10 @@ def main():
                         type=str,
                         required=True,
                         help="The output directory where the model predictions and checkpoints will be written.")
+    parser.add_argument("--window_size",
+                        required=True,
+                        type=int,
+                        help="A paragraph's window size")
 
     ## Other parameters
     parser.add_argument("--eval_data_dir",
@@ -368,11 +372,17 @@ def main():
                         type=str,
                         help="Using last training model")
 
+    parser.add_argument("--save_every_epoch",
+                        action='store_true',
+                        help="Saving models in every epoch")
+
 
     args = parser.parse_args()
 
     
-
+    logger.info("save_every_epoch : {}".format(args.save_every_epoch))
+    logger.info("Using Window Size : {}".format(args.window_size))
+    logger.info("\n******************************************\n")
     if args.gpu_device != None:
         os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_device
 
@@ -423,7 +433,7 @@ def main():
     train_examples = None
     num_train_optimization_steps = None
     if args.do_train:
-        train_examples = processor.get_train_examples(args.data_dir)
+        train_examples = processor.get_train_examples(args.data_dir,window_size=args.window_size)
         
         num_train_optimization_steps = int(
             len(train_examples) / args.train_batch_size / args.gradient_accumulation_steps) * args.num_train_epochs
@@ -541,8 +551,8 @@ def main():
                 local_loss += loss.item()
                 nb_tr_examples += input_ids.size(0)
                 nb_tr_steps += 1
-                if step % 20 == 0:
-                    tmp = {'epoch': epoch, 'step': step, 'loss': local_loss/20.00}
+                if step % 100 == 0:
+                    tmp = {'epoch': epoch, 'step': step, 'loss': local_loss/100.00}
                     result.append(tmp)
                     print(tmp)
                     local_loss = 0
@@ -558,9 +568,19 @@ def main():
                     optimizer.zero_grad()
                     global_step += 1
 
+            if args.save_every_epoch:
+                # Save a trained model
+                model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
+                output_model_file = os.path.join(args.output_dir, "pytorch_model_{}_{}.bin".format(epoch,args.output_model_name))
+                output_model_loss_file = os.path.join(args.output_dir, "model_loss_{}_{}.txt".format(epoch,args.output_model_name))
+                logger.info("Saving model : {}".format(output_model_file))
+                torch.save(model_to_save.state_dict(), output_model_file)
+                json.dump(result, open(output_model_loss_file, "w"))
+                model_to_save = None
+
     
     
-    if args.do_train:
+    if args.save_every_epoch != True:
         # Save a trained model
         model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
         output_model_file = os.path.join(args.output_dir, "pytorch_model_{}.bin".format(args.output_model_name))
@@ -580,7 +600,7 @@ def main():
     model.to(device)
 
     if args.do_eval and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
-        eval_examples = processor.get_dev_examples(args.eval_data_dir)
+        eval_examples = processor.get_dev_examples(args.eval_data_dir, window_size=args.window_size)
         eval_features = convert_examples_to_features(
             eval_examples, label_list, args.max_seq_length, tokenizer)
         logger.info("***** Running evaluation *****")

@@ -1,5 +1,7 @@
 squad_data/*
 output/*
+output_ver3/*
+output_ver4/*
 GLUE_data/*
 absetact_data/*
 __pycache__/*
