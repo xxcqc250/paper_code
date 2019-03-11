@@ -1,11 +1,14 @@
-###
-# 可自動儲存每個epoch的model
-# 自動eval每個epoch的model
-# 平衡label數量，使用harry方式平衡 :
-# 
-# 一篇文章，如果key sentence有n句，找另外n句非key sentence當作input
-# 
-###
+'''
+可自動儲存每個epoch的model
+不平衡label數量
+
+input :
+[CLS] sentence 1 [SEP] sentence 1 前後2句 [SEP]
+
+'''
+
+
+
 
 from __future__ import absolute_import
 from __future__ import division
@@ -123,26 +126,35 @@ class MyDataProcessor(DataProcessor):
         all_examples = []
         for idx,ele in enumerate(data):
 
+            # 盡量讓資料平均
+            count_target = len(ele['target'])
+            count_nonTarget = 0
+
             context_index = [i for i in range(len(ele['context']))]
 
             for idx in context_index:
                 start_pos = None
                 end_pos = None
-                start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
-                
-                select_sentence = ele['context'][start_pos:end_pos]
-                keySentence = [sentence for sentence in select_sentence if sentence in ele['target']]
 
-                if len(keySentence) > 0:
-                    doc_text = " ".join([self.rm_punc(s) for s in select_sentence])
+                if ele['context'][idx] in ele['target']:
+                    label = 1
+                    target_text = self.rm_punc(ele['context'][idx])
 
-                    for sentence in select_sentence:
-                        target_text = self.rm_punc(sentence)
-                        if sentence in keySentence:
-                            label = 1
-                        else:
-                            label = 0
-                        all_examples.append(InputExample(doc_text,target_text,label))
+                    start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
+                    doc_text = " ".join([self.rm_punc(ele['context'][n]) for n in range(start_pos,end_pos)])
+
+                    all_examples.append(InputExample(doc_text,target_text,label))
+
+                else:
+                    label = 0
+                    target_text = self.rm_punc(ele['context'][idx])
+
+                    start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
+                    doc_text = " ".join([self.rm_punc(ele['context'][n]) for n in range(start_pos,end_pos)])
+
+                    all_examples.append(InputExample(doc_text,target_text,label))
+
+
         return all_examples
 
     def _create_eval_examples(self,data,window=2):
@@ -155,21 +167,25 @@ class MyDataProcessor(DataProcessor):
             for idx in context_index:
                 start_pos = None
                 end_pos = None
-                start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
-                
-                select_sentence = ele['context'][start_pos:end_pos]
-                keySentence = [sentence for sentence in select_sentence if sentence in ele['target']]
 
-                if len(keySentence) > 0:
-                    doc_text = " ".join([self.rm_punc(s) for s in select_sentence])
+                if ele['context'][idx] in ele['target']:
+                    label = 1
+                    target_text = self.rm_punc(ele['context'][idx])
+                    
+                    start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
+                    doc_text = " ".join([self.rm_punc(ele['context'][n]) for n in range(start_pos,end_pos)])
 
-                    for sentence in select_sentence:
-                        target_text = self.rm_punc(sentence)
-                        if sentence in keySentence:
-                            label = 1
-                        else:
-                            label = 0
-                        all_examples.append(InputExample(doc_text,target_text,label))
+                    all_examples.append(InputExample(doc_text,target_text,label))
+
+                else:
+
+                    label = 0
+                    target_text = self.rm_punc(ele['context'][idx])
+
+                    start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
+                    doc_text = " ".join([self.rm_punc(ele['context'][n]) for n in range(start_pos,end_pos)])
+
+                    all_examples.append(InputExample(doc_text,target_text,label))
 
 
         return all_examples
