@@ -1,11 +1,11 @@
-###
-# 可自動儲存每個epoch的model
-# 自動eval每個epoch的model
-# 平衡label數量，使用harry方式平衡 :
-# 
-# 一篇文章，如果key sentence有n句，找另外n句非key sentence當作input
-# 
-###
+'''
+只取label附近的paragraph
+
+input :
+[CLS] sentence [SEP] paragraph [SEP]
+
+
+'''
 
 from __future__ import absolute_import
 from __future__ import division
