@@ -1173,9 +1173,6 @@ class BertForSentenceExtraction_DeepHidden(PreTrainedBertModel):
                 nn.ReLU(),
                 nn.Dropout(0.3)
             )
-        # self.hidden_1 = nn.Linear(config.hidden_size, 400)
-        # self.hidden_2 = nn.Linear(400, 200)
-        # self.hidden_3 = nn.Linear(200, 50)
         self.classifier = nn.Linear(50, num_labels)
         self.apply(self.init_bert_weights)
 
@@ -1225,3 +1222,56 @@ class BertForSentenceExtraction(PreTrainedBertModel):
         else:
             return logits
 
+
+class BertForSentenceExtraction_CNN(PreTrainedBertModel):
+    def __init__(self, config, sequence_length, num_labels=2, out_channels=3, kernel_size=3, Conv_stride=1, MaxPool1d_kernal=3):
+        super(BertForSentenceExtraction_CNN, self).__init__(config)
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.Conv_stride = Conv_stride
+        self.MaxPool1d_kernal = MaxPool1d_kernal
+
+        self.num_labels = num_labels
+        self.bert = BertModel(config)
+        # self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.conv = nn.Sequential( 
+                # input [batch_size, hidden_size, sequence_length]
+                nn.Conv1d(in_channels=config.hidden_size, out_channels=out_channels, kernel_size=kernel_size, stride=Conv_stride, padding=int((kernel_size-1)/2)),
+                # size : [batch_size, out_channels, sequence_length]
+                nn.ReLU(),
+                nn.MaxPool1d(kernel_size=MaxPool1d_kernal)
+                # size : [batch_size, out_channels, sequence_length/kernel_size]
+            )
+        self.dense = nn.Sequential(
+                nn.Linear(self.out_channels*int(sequence_length/kernel_size), 400),
+                nn.ReLU(),
+                nn.Dropout(0.3),
+                nn.Linear(400, 200),
+                nn.ReLU(),
+                nn.Dropout(0.3),
+                nn.Linear(200, 50),
+                nn.ReLU(),
+                nn.Dropout(0.3)
+            )
+        self.classifier = nn.Linear(50, num_labels)
+        self.apply(self.init_bert_weights)
+
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None):
+        encoded_layers, _ = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
+        encoded_layers = torch.transpose(encoded_layers,1,2)
+        hidden_state = self.conv(encoded_layers)
+
+        # flatten
+        hidden_state = hidden_state.view(hidden_state.size(0),-1)
+
+        hidden_state = self.dense(hidden_state)
+        logits = self.classifier(hidden_state)
+        
+        logits = F.softmax(logits)
+
+        if labels is not None:
+            loss_fct = CrossEntropyLoss()
+            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            return loss
+        else:
+            return logits
