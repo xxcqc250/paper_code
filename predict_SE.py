@@ -28,7 +28,7 @@ from pytorch_pretrained_bert.tokenization import BertTokenizer
 # from pytorch_pretrained_bert.modeling import BertForSequenceClassification
 from pytorch_pretrained_bert.optimization import BertAdam, warmup_linear
 from pytorch_pretrained_bert.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
-from modeling import BertForSentenceExtraction_DeepHidden,BertForSequenceClassification
+from modeling import BertForSentenceExtraction_DeepHidden,BertForSequenceClassification,BertForSentenceExtraction_CNN
 
 import json
 import random
@@ -319,6 +319,11 @@ def main():
                         action='store_true',
                         help="Saving models in every epoch")
 
+    parser.add_argument("--output_result_path",
+                        type=str,
+                        required=True,
+                        help="path of the output result")
+
 
     args = parser.parse_args()
 
@@ -376,7 +381,11 @@ def main():
 
     # Load a trained model that you have fine-tuned
     model_state_dict = torch.load(eval_model_file)
-    model = BertForSentenceExtraction_DeepHidden.from_pretrained(args.bert_model, state_dict=model_state_dict, num_labels=num_labels)
+    # model = BertForSentenceExtraction_DeepHidden.from_pretrained(args.bert_model, state_dict=model_state_dict, num_labels=num_labels)
+    model = BertForSentenceExtraction_CNN.from_pretrained(args.bert_model, 
+                    state_dict=model_state_dict,
+                    num_labels = num_labels,
+                    sequence_length=args.max_seq_length) 
     model.to(device)
 
     if args.do_eval and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
@@ -428,11 +437,17 @@ def main():
 
                 # tmp_eval_accuracy = accuracy(logits, label_ids)
                 predict_label += np.argmax(logits, axis=1).tolist()
-            # print(predict_label)
             # print(len(predict_label))
 
-            extract_sentence = [doc_examples[idx].target_text for idx,p_label in enumerate(predict_label) if p_label==True]
-            extract_sentence = list(set(extract_sentence))
+            extract_sentence = [doc_examples[idx].target_text for idx,p_label in enumerate(predict_label) if p_label==1]
+
+            temp = extract_sentence
+            extract_sentence = []
+            for s in temp:
+                if s not in extract_sentence:
+                    extract_sentence.append(s)
+
+            # extract_sentence = list(set(extract_sentence))
             # print(list(set(extract_sentence)))
             try:
                 rouge_score = Rouge().get_scores(gold_summary," ".join(extract_sentence))
@@ -455,8 +470,8 @@ def main():
         print('Using model :',eval_model_file)
         print(final_rouge_1, final_rouge_2, final_rouge_L)
         print(skip_rouge_1, skip_rouge_2, skip_rouge_L)
-
-        with open('/notebooks/papers/my_code/predict_result/result.txt','a') as f:
+        print("output path :",args.output_result_path)
+        with open(args.output_result_path,'a') as f:
             f.write('Using model : {}\n'.format(eval_model_file))
             f.write('ROUGE_1 : {}, ROUGE_2 : {}, ROUGE_L : {}\n'.format(final_rouge_1,final_rouge_2,final_rouge_L))
             f.write('S_ROUGE_1 : {}, S_ROUGE_2 : {}, S_ROUGE_L : {}\n\n\n'.format(skip_rouge_1,skip_rouge_2,skip_rouge_L))

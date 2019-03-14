@@ -4,7 +4,7 @@
 input :
 [CLS] sentence [SEP] paragraph [SEP]
 
-
+使用 BERT + CNN model
 '''
 
 from __future__ import absolute_import
@@ -740,6 +740,19 @@ def main():
             writer.write("fn : {}  把1判給0\n".format(label_confusion_matrix[2]))
             writer.write("tp : {}  把1判給1".format(label_confusion_matrix[3]))
 
+        # logger.info("***** Eval results *****")
+        # logger.info("Precision : {}".format(Pr))
+        # logger.info("Recall : {}".format(Re))
+        # logger.info("F1 : {}".format(F1))
+        # for key in sorted(result.keys()):
+        #     logger.info("  %s = %s", key, str(result[key]))
+            
+        # print("Precision : {}\nRecall : {}\nF1 : {}\n\n".format(Pr,Re,F1))
+        # print("label 0 Recall : {}\nlabel 1 Recall : {}\n\n".format(label_recall[0],label_recall[1]))
+        # print("tn : {}  把0判給0\n".format(label_confusion_matrix[0]))
+        # print("fp : {}  把0判給1\n".format(label_confusion_matrix[1]))
+        # print("fn : {}  把1判給0\n".format(label_confusion_matrix[2]))
+        # print("tp : {}  把1判給1".format(label_confusion_matrix[3]))
 
 if __name__ == "__main__":
     main()
