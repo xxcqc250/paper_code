@@ -353,10 +353,18 @@ def main():
                         default=None,
                         type=str,
                         help="Using last training model")
-
     parser.add_argument("--save_every_epoch",
                         action='store_true',
                         help="Saving models in every epoch")
+
+    parser.add_argument("--out_channels",
+                        default=3,
+                        type=int,
+                        help="Amount of filters")
+    parser.add_argument("--kernel_size",
+                        default=3,
+                        type=int,
+                        help="Filter size")
 
 
     args = parser.parse_args()
@@ -455,16 +463,20 @@ def main():
             model_state_dict = torch.load(training_modelpath)
             model = BertForSentenceExtraction_CNN.from_pretrained(args.bert_model, 
                 state_dict=model_state_dict,
-                num_labels = num_labels,
-                sequence_length=args.max_seq_length) 
+                num_labels=num_labels,
+                sequence_length=args.max_seq_length,
+                out_channels=args.out_channels,
+                kernel_size=args.kernel_size) 
         else:
             logger.info("Loading Bert-base model...")
             model = BertForSentenceExtraction_CNN.from_pretrained(args.bert_model,
                   cache_dir=PYTORCH_PRETRAINED_BERT_CACHE / 'distributed_{}'.format(args.local_rank),
-                  num_labels = num_labels,
-                  sequence_length=args.max_seq_length)
+                  num_labels=num_labels,
+                  sequence_length=args.max_seq_length,
+                  out_channels=args.out_channels,
+                  kernel_size=args.kernel_size) 
 
-
+        print(model)
         model.to(device)
         if n_gpu > 1:
             model = torch.nn.DataParallel(model)
@@ -532,7 +544,9 @@ def main():
                     model = BertForSentenceExtraction_CNN.from_pretrained(args.bert_model, 
                         state_dict=model_state_dict, 
                         num_labels=num_labels, 
-                        sequence_length=args.max_seq_length)
+                        sequence_length=args.max_seq_length,
+                        out_channels=args.out_channels,
+                        kernel_size=args.kernel_size) 
                     model.to(device)
 
                     eval_examples = processor.get_dev_examples(args.eval_data_dir, window_size=args.window_size)
@@ -619,7 +633,9 @@ def main():
                 model = BertForSentenceExtraction_CNN.from_pretrained(args.bert_model, 
                     state_dict=model_state_dict,
                     num_labels = num_labels,
-                    sequence_length=args.max_seq_length) 
+                    sequence_length=args.max_seq_length,
+                    out_channels=args.out_channels,
+                    kernel_size=args.kernel_size)  
 
                 model.to(device)
                 if n_gpu > 1:
@@ -661,7 +677,9 @@ def main():
     model = BertForSentenceExtraction_CNN.from_pretrained(args.bert_model, 
         state_dict=model_state_dict, 
         num_labels=num_labels,
-        sequence_length=args.max_seq_length)
+        sequence_length=args.max_seq_length,
+        out_channels=args.out_channels,
+        kernel_size=args.kernel_size) 
     model.to(device)
 
     if args.do_eval and (args.local_rank == -1 or torch.distributed.get_rank() == 0):

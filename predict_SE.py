@@ -1,11 +1,4 @@
-###
-# 可自動儲存每個epoch的model
-# 自動eval每個epoch的model
-# 平衡label數量，使用harry方式平衡 :
-# 
-# 一篇文章，如果key sentence有n句，找另外n句非key sentence當作input
-# 
-###
+
 
 from __future__ import absolute_import
 from __future__ import division
@@ -315,10 +308,6 @@ def main():
                         type=str,
                         help="Using last training model")
 
-    parser.add_argument("--save_every_epoch",
-                        action='store_true',
-                        help="Saving models in every epoch")
-
     parser.add_argument("--output_result_path",
                         type=str,
                         required=True,
@@ -328,7 +317,6 @@ def main():
     args = parser.parse_args()
 
     
-    logger.info("save_every_epoch : {}".format(args.save_every_epoch))
     logger.info("Using Window Size : {}".format(args.window_size))
     logger.info("\n******************************************\n")
     if args.gpu_device != None:

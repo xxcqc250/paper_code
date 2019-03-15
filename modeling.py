@@ -1240,10 +1240,10 @@ class BertForSentenceExtraction_CNN(PreTrainedBertModel):
                 # size : [batch_size, out_channels, sequence_length]
                 nn.ReLU(),
                 nn.MaxPool1d(kernel_size=MaxPool1d_kernal)
-                # size : [batch_size, out_channels, sequence_length/kernel_size]
+                # size : [batch_size, out_channels, sequence_length/MaxPool1d_kernal]
             )
         self.dense = nn.Sequential(
-                nn.Linear(self.out_channels*int(sequence_length/kernel_size), 400),
+                nn.Linear(self.out_channels*int(sequence_length/MaxPool1d_kernal), 400),
                 nn.ReLU(),
                 nn.Dropout(0.3),
                 nn.Linear(400, 200),
