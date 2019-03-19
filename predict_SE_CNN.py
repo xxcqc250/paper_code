@@ -108,7 +108,7 @@ class MyDataProcessor(DataProcessor):
 
     def _create_eval_examples(self,data,window=2):
         all_examples = []
-        for idx,ele in enumerate(data):
+        for index,ele in enumerate(data):
             doc_examples = []
             context_index = [i for i in range(len(ele['context']))]
 
