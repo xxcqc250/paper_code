@@ -356,6 +356,10 @@ def main():
     parser.add_argument("--save_every_epoch",
                         action='store_true',
                         help="Saving models in every epoch")
+    parser.add_argument("--start_epoch",
+                        default=0,
+                        type=int,
+                        help="training start epoch")
 
     parser.add_argument("--out_channels",
                         default=3,
@@ -495,7 +499,7 @@ def main():
 
         result = []
         model.train()
-        for epoch in trange(int(args.num_train_epochs), desc="Epoch"):
+        for epoch in trange(int(args.start_epoch),int(args.num_train_epochs), desc="Epoch"):
             tr_loss = 0
             local_loss = 0
             nb_tr_examples, nb_tr_steps = 0, 0
