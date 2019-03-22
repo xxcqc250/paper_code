@@ -121,7 +121,7 @@ class MyDataProcessor(DataProcessor):
         
         label = None
         all_examples = []
-        for idx,ele in enumerate(data):
+        for idx,ele in tqdm(enumerate(data),desc='Loading Data'):
 
             context_index = [i for i in range(len(ele['context']))]
 
@@ -354,6 +354,11 @@ def main():
                         type=str,
                         help="Using last training model")
 
+    parser.add_argument('--start_epoch',
+                        type=int,
+                        default=0,
+                        help="start train epoch")
+
     parser.add_argument("--save_every_epoch",
                         action='store_true',
                         help="Saving models in every epoch")
@@ -479,7 +484,7 @@ def main():
 
         result = []
         model.train()
-        for epoch in trange(int(args.num_train_epochs), desc="Epoch"):
+        for epoch in trange(int(args.start_epoch),int(args.num_train_epochs), desc="Epoch"):
             tr_loss = 0
             local_loss = 0
             nb_tr_examples, nb_tr_steps = 0, 0
@@ -514,8 +519,8 @@ def main():
             if args.save_every_epoch:
                 # Save a trained model
                 model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
-                output_model_file = os.path.join(args.output_dir, "pytorch_model_{}_{}.bin".format(epoch,args.output_model_name))
-                output_model_loss_file = os.path.join(args.output_dir, "model_loss_{}_{}.txt".format(epoch,args.output_model_name))
+                output_model_file = os.path.join(args.output_dir, "pytorch_model_{}_epoch_{}.bin".format(epoch,args.output_model_name))
+                output_model_loss_file = os.path.join(args.output_dir, "model_loss_{}_epoch_{}.txt".format(epoch,args.output_model_name))
                 logger.info("Saving model : {}".format(output_model_file))
                 torch.save(model_to_save.state_dict(), output_model_file)
                 json.dump(result, open(output_model_loss_file, "w"))
@@ -586,7 +591,7 @@ def main():
                     label_recall = recall_score(eval_true, eval_predict,average=None)
                     label_confusion_matrix = confusion_matrix(eval_true, eval_predict).ravel()
                     Pr,Re,F1,_ = precision_recall_fscore_support(eval_true, eval_predict, average='weighted')
-                    output_eval_file = os.path.join(args.output_dir, "eval_results_{}_{}.txt".format(epoch,args.output_model_name))
+                    output_eval_file = os.path.join(args.output_dir, "eval_results_{}_epoch_{}.txt".format(epoch,args.output_model_name))
                     with open(output_eval_file, "w") as writer:
                         writer.write("****** eval_results_{}.txt ******\n\n".format(args.output_model_name))
                         logger.info("***** Eval results *****")
