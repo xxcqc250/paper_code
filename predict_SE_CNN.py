@@ -406,7 +406,10 @@ def main():
         logger.info("Loading model : {}".format(eval_model_file))
 
         # Load a trained model that you have fine-tuned
-        model_state_dict = torch.load(eval_model_file)
+        if args.no_cuda:
+            model_state_dict = torch.load(eval_model_file, map_location='cpu')
+        else:
+            model_state_dict = torch.load(eval_model_file)
         # model = BertForSentenceExtraction_DeepHidden.from_pretrained(args.bert_model, state_dict=model_state_dict, num_labels=num_labels)
         model = BertForSentenceExtraction_CNN.from_pretrained(args.bert_model, 
                         state_dict=model_state_dict,
@@ -491,9 +494,12 @@ def main():
             final_rouge_2 = round(rouge_2/len(eval_examples),4)
             final_rouge_L = round(rouge_L/len(eval_examples),4)
 
-            skip_rouge_1 = round(rouge_1/(len(eval_examples)-skip),4)
-            skip_rouge_2 = round(rouge_2/(len(eval_examples)-skip),4)
-            skip_rouge_L = round(rouge_L/(len(eval_examples)-skip),4)
+            if skip == len(eval_examples):
+                skip_rouge_1,skip_rouge_2,skip_rouge_L = 0,0,0
+            else:
+                skip_rouge_1 = round(rouge_1/(len(eval_examples)-skip),4)
+                skip_rouge_2 = round(rouge_2/(len(eval_examples)-skip),4)
+                skip_rouge_L = round(rouge_L/(len(eval_examples)-skip),4)
 
             print('Using model :',eval_model_file)
             print(final_rouge_1, final_rouge_2, final_rouge_L)
