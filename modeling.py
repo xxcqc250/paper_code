@@ -1275,3 +1275,79 @@ class BertForSentenceExtraction_CNN(PreTrainedBertModel):
             return loss
         else:
             return logits
+
+class BertForSentenceExtraction_Residual_CNN(PreTrainedBertModel):
+    def __init__(self, config, sequence_length, num_labels=2, out_channels=3, kernel_size=3, Conv_stride=1, MaxPool1d_kernal=3):
+        super(BertForSentenceExtraction_Residual_CNN, self).__init__(config)
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.Conv_stride = Conv_stride
+        self.MaxPool1d_kernal = MaxPool1d_kernal
+
+        self.num_labels = num_labels
+        self.bert = BertModel(config)
+        # self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.conv = nn.Sequential( 
+                # input [batch_size, hidden_size, sequence_length]
+                nn.Conv1d(in_channels=config.hidden_size, out_channels=out_channels, kernel_size=kernel_size, stride=Conv_stride, padding=int((kernel_size-1)/2)),
+                # size : [batch_size, out_channels, sequence_length]
+                nn.ReLU(),
+                nn.MaxPool1d(kernel_size=MaxPool1d_kernal)
+                # size : [batch_size, out_channels, sequence_length/MaxPool1d_kernal]
+            )
+        self.dense = nn.Sequential(
+                nn.Linear(self.out_channels*int(sequence_length/MaxPool1d_kernal), 400),
+                nn.ReLU(),
+                nn.Dropout(0.3),
+                nn.Linear(400, 200),
+                nn.ReLU(),
+                nn.Dropout(0.3),
+                nn.Linear(200, 50),
+                nn.ReLU(),
+                nn.Dropout(0.3)
+            )
+        self.classifier = nn.Linear(50, num_labels)
+        self.apply(self.init_bert_weights)
+
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None):
+        encoded_layers, _ = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
+        encoded_layers = torch.transpose(encoded_layers,1,2)
+        hidden_state = self.conv(encoded_layers)
+
+        # flatten
+        hidden_state = hidden_state.view(hidden_state.size(0),-1)
+
+        hidden_state = self.dense(hidden_state)
+        logits = self.classifier(hidden_state)
+        
+        logits = F.softmax(logits)
+
+        if labels is not None:
+            loss_fct = CrossEntropyLoss()
+            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            return loss
+        else:
+            return logits
+
+class ResidualBlock(nn.Module):
+    def __init__(self, inchannel, outchannel, stride=1):
+        super(ResidualBlock, self).__init__()
+        self.left = nn.Sequential(
+            nn.Conv2d(inchannel, outchannel, kernel_size=3, stride=stride, padding=1, bias=False),
+            nn.BatchNorm2d(outchannel),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(outchannel, outchannel, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(outchannel)
+        )
+        self.shortcut = nn.Sequential()
+        if stride != 1 or inchannel != outchannel:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(inchannel, outchannel, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(outchannel)
+            )
+
+    def forward(self, x):
+        out = self.left(x)
+        out += self.shortcut(x)
+        out = F.relu(out)
+        return out
