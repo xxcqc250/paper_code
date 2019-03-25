@@ -1190,6 +1190,43 @@ class BertForSentenceExtraction_DeepHidden(PreTrainedBertModel):
         else:
             return logits
 
+class BertForSentenceExtraction_Weighted_Balance_DNN(PreTrainedBertModel):
+    def __init__(self, config, num_labels=1):
+        super(BertForSentenceExtraction_Weighted_Balance_DNN, self).__init__(config)
+        self.num_labels = num_labels
+        self.bert = BertModel(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.dense = nn.Sequential(
+                nn.Linear(config.hidden_size, 400),
+                nn.ReLU(),
+                nn.Dropout(0.3),
+                nn.Linear(400, 200),
+                nn.ReLU(),
+                nn.Dropout(0.3),
+                nn.Linear(200, 50),
+                nn.ReLU(),
+                nn.Dropout(0.3)
+            )
+        self.classifier = nn.Linear(50, num_labels)
+        self.apply(self.init_bert_weights)
+
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None):
+        _, pooled_output = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
+        pooled_output = self.dropout(pooled_output)
+        hidden_state = self.dense(pooled_output)
+        logits = self.classifier(hidden_state)
+        logits = F.sigmoid(logits)
+
+        if labels is not None:
+            loss_fct = nn.MSELoss()
+            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            # print('logits :',logits)
+            # print('labels :',labels)
+            # print('loss :',loss)
+            # input()
+            return loss
+        else:
+            return logits
 
 class BertForSentenceExtraction(PreTrainedBertModel):
     def __init__(self, config, num_labels=2):
