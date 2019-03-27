@@ -43,13 +43,7 @@ logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(messa
                     level = logging.INFO)
 logger = logging.getLogger(__name__)
 
-# class InputExample(object):
-#     def __init__(self,doc_text,target_text,label):
-#         self.target_text = target_text
-#         self.doc_text = doc_text
-#         self.label = label
         
-
 class DataProcessor(object):
     """Base class for data converters for sequence classification data sets."""
 
@@ -76,34 +70,23 @@ class DataProcessor(object):
             return lines
 
 
-# class InputFeatures(object):
-#     """A single set of features of data."""
-
-#     def __init__(self, input_ids, input_mask, segment_ids, label_id):
-#         self.input_ids = input_ids
-#         self.input_mask = input_mask
-#         self.segment_ids = segment_ids
-#         self.label_id = label_id
-
-
 class MyDataProcessor(DataProcessor):
 
-    def get_train_examples(self, data_dir, window_size=2):
+    def get_train_examples(self, data_dir):
         logger.info("LOADING TRAINING DATA : {}".format(data_dir))
         with open(data_dir,'r') as f:
             data = json.load(f)
-        return self._create_examples(data,window_size)
+        return self._create_examples(data)
 
-    def get_dev_examples(self, data_dir, window_size=2):
+    def get_dev_examples(self, data_dir):
         logger.info("LOADING EVALUATION DATA : {}".format(data_dir))
         with open(data_dir,'r') as f:
             data = json.load(f)
         return self._create_eval_examples(data,window_size)
 
-    def InputExample(self,doc_text,target_text,label):
+    def InputExample(self,sentence,label):
         tmp = {}
-        tmp['doc_text'] = doc_text
-        tmp['target_text'] = target_text
+        tmp['sentence'] = sentence
         tmp['label'] = label
         return tmp
 
@@ -127,61 +110,37 @@ class MyDataProcessor(DataProcessor):
             end_pos = idx + window + 1
         return start_pos,end_pos
 
-    def _create_examples(self,data,window=2):
+    def _create_examples(self,data):
         
         label = None
         all_examples = []
         for idx,ele in tqdm(enumerate(data),desc='Loading Data'):
 
-            context_index = [i for i in range(len(ele['context']))]
+            doc_example = []
+            for sentence in ele['context']:
+                if sentence in ele['target']:
+                    label = 1
+                else:
+                    label = 0
+                doc_example.append(self.InputExample(self.rm_punc(sentence),label))
 
-            for idx in context_index:
-                start_pos = None
-                end_pos = None
-                start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
-                
-                select_sentence = ele['context'][start_pos:end_pos]
-                keySentence = [sentence for sentence in select_sentence if sentence in ele['target']]
-
-                if len(keySentence) > 0:
-                    doc_text = " ".join([self.rm_punc(s) for s in select_sentence])
-
-                    for sentence in select_sentence:
-                        target_text = self.rm_punc(sentence)
-                        if sentence in keySentence:
-                            label = 1
-                        else:
-                            label = 0
-                        all_examples.append(self.InputExample(doc_text,target_text,label))
+            all_examples.append(doc_example)
         return all_examples
 
-    def _create_eval_examples(self,data,window=2):
+    def _create_eval_examples(self,data):
         label = None
         all_examples = []
-        for idx,ele in enumerate(data):
+        for idx,ele in tqdm(enumerate(data),desc='Loading Data'):
 
-            context_index = [i for i in range(len(ele['context']))]
+            doc_example = []
+            for sentence in ele['context']:
+                if sentence in ele['target']:
+                    label = 1
+                else:
+                    label = 0
+                doc_example.append(self.InputExample(self.rm_punc(sentence),label))
 
-            for idx in context_index:
-                start_pos = None
-                end_pos = None
-                start_pos, end_pos = self.get_pos(idx,window,len(ele['context']))
-                
-                select_sentence = ele['context'][start_pos:end_pos]
-                keySentence = [sentence for sentence in select_sentence if sentence in ele['target']]
-
-                if len(keySentence) > 0:
-                    doc_text = " ".join([self.rm_punc(s) for s in select_sentence])
-
-                    for sentence in select_sentence:
-                        target_text = self.rm_punc(sentence)
-                        if sentence in keySentence:
-                            label = 1
-                        else:
-                            label = 0
-                        all_examples.append(self.InputExample(doc_text,target_text,label))
-
-
+            all_examples.append(doc_example)
         return all_examples
 
 
@@ -193,54 +152,54 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
 
     label_map = {label : i for i, label in enumerate(label_list)}
     
-    print(label_map)
     features = []
     logging_count = 0
-    for example in tqdm(examples,desc='Convert To Features'):
-        tokens_doc = tokenizer.tokenize(example['doc_text'])
-        tokens_sentence = tokenizer.tokenize(example['target_text'])
-        _truncate_seq_pair(tokens_sentence, tokens_doc, max_seq_length - 3)
+    for doc in tqdm(examples,desc='Convert To Features'):
 
-        tokens = ["[CLS]"] + tokens_sentence + ["[SEP]"]
-        segment_ids = [0] * len(tokens)
+        doc_feature = []
+        for example in doc:
 
-        if tokens_doc:
-            tokens += tokens_doc + ["[SEP]"]
-            segment_ids += [1] * (len(tokens_doc) + 1)
+            tokens_b = ""
+            tokens_sentence = tokenizer.tokenize(example['sentence'])
+            _truncate_seq_pair(tokens_sentence, tokens_b, max_seq_length - 2)
 
-        input_ids = tokenizer.convert_tokens_to_ids(tokens)
+            tokens = ["[CLS]"] + tokens_sentence + ["[SEP]"]
+            segment_ids = [0] * len(tokens)
 
-        # The mask has 1 for real tokens and 0 for padding tokens. Only real
-        # tokens are attended to.
-        input_mask = [1] * len(input_ids)
+            input_ids = tokenizer.convert_tokens_to_ids(tokens)
 
-        # Zero-pad up to the sequence length.
-        padding = [0] * (max_seq_length - len(input_ids))
-        input_ids += padding
-        input_mask += padding
-        segment_ids += padding
+            # The mask has 1 for real tokens and 0 for padding tokens. Only real
+            # tokens are attended to.
+            input_mask = [1] * len(input_ids)
 
-        assert len(input_ids) == max_seq_length
-        assert len(input_mask) == max_seq_length
-        assert len(segment_ids) == max_seq_length
+            # Zero-pad up to the sequence length.
+            padding = [0] * (max_seq_length - len(input_ids))
+            input_ids += padding
+            input_mask += padding
+            segment_ids += padding
 
-        label_id = label_map[example['label']]
-        if logging_count < -1:
-            logging_count += 1
-            logger.info("*** Example ***")
-            logger.info("tokens: %s" % " ".join(
-                    [str(x) for x in tokens]))
-            logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-            logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
-            logger.info(
-                    "segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
-            logger.info("label: %s (id = %d)" % (example['label'], label_id))
+            assert len(input_ids) == max_seq_length
+            assert len(input_mask) == max_seq_length
+            assert len(segment_ids) == max_seq_length
 
-        features.append(
-                InputFeatures(input_ids=input_ids,
-                              input_mask=input_mask,
-                              segment_ids=segment_ids,
-                              label_id=label_id))
+            label_id = label_map[example['label']]
+            if logging_count < 5:
+                logging_count += 1
+                logger.info("*** Example ***")
+                logger.info("tokens: %s" % " ".join(
+                        [str(x) for x in tokens]))
+                logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+                logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
+                logger.info(
+                        "segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
+                logger.info("label: %s (id = %d)" % (example['label'], label_id))
+
+            doc_feature.append(
+                    InputFeatures(input_ids=input_ids,
+                                  input_mask=input_mask,
+                                  segment_ids=segment_ids,
+                                  label_id=label_id))
+        features.append(doc_feature)
     return features
 
 def InputFeatures(input_ids, input_mask, segment_ids, label_id):
@@ -291,7 +250,6 @@ def main():
                         required=True,
                         help="The output directory where the model predictions and checkpoints will be written.")
     parser.add_argument("--window_size",
-                        required=True,
                         type=int,
                         help="A paragraph's window size")
 
@@ -440,17 +398,17 @@ def main():
     if args.do_train:
         try:
             logger.info("***** Try Loading train_examples & train_features*****")
-            with open('DATA_CASHE/{0}_{1}_{2}_{3}'.format('train_examples_BiGRU', args.data_dir.split('/')[-1], args.max_seq_length, args.window_size),'r') as f:
+            with open('DATA_CASHE/train_examples_BiGRU_{0}_{1}'.format( args.data_dir.split('/')[-1], args.max_seq_length),'r') as f:
                 train_examples = json.load(f)
-            with open('DATA_CASHE/{0}_{1}_{2}_{3}'.format('train_features_BiGRU',args.data_dir.split('/')[-1], args.max_seq_length, args.window_size),'r') as f:
+            with open('DATA_CASHE/train_features_BiGRU_{0}_{1}'.format(args.data_dir.split('/')[-1], args.max_seq_length),'r') as f:
                 train_features = json.load(f)
         except:
             logger.info("***** Create Training Data *****")
-            train_examples = processor.get_train_examples(args.data_dir, window_size=args.window_size)
-            with open('DATA_CASHE/{0}_{1}_{2}_{3}'.format('train_examples_BiGRU',args.data_dir.split('/')[-1], args.max_seq_length, args.window_size),'w') as f:
+            train_examples = processor.get_train_examples(args.data_dir)
+            with open('DATA_CASHE/train_examples_BiGRU_{0}_{1}'.format(args.data_dir.split('/')[-1], args.max_seq_length),'w') as f:
                 json.dump(train_examples,f)
             train_features = convert_examples_to_features(train_examples, label_list, args.max_seq_length, tokenizer)
-            with open('DATA_CASHE/{0}_{1}_{2}_{3}'.format('train_features_BiGRU',args.data_dir.split('/')[-1], args.max_seq_length, args.window_size),'w') as f:
+            with open('DATA_CASHE/train_features_BiGRU_{0}_{1}'.format(args.data_dir.split('/')[-1], args.max_seq_length),'w') as f:
                 json.dump(train_features,f)
 
         num_train_optimization_steps = int(
@@ -461,10 +419,23 @@ def main():
         logger.info("  Num examples = %d", len(train_examples))
         logger.info("  Batch size = %d", args.train_batch_size)
         logger.info("  Num steps = %d", num_train_optimization_steps)
-        all_input_ids = torch.tensor([f['input_ids'] for f in train_features], dtype=torch.long)
-        all_input_mask = torch.tensor([f['input_mask'] for f in train_features], dtype=torch.long)
-        all_segment_ids = torch.tensor([f['segment_ids'] for f in train_features], dtype=torch.long)
-        all_label_ids = torch.tensor([f['label_id'] for f in train_features], dtype=torch.long)
+
+        all_doc_example = []
+        for Doc_example in train_features:
+            all_input_ids = [f['input_ids'] for f in Doc_example]
+            all_input_mask = [f['input_mask'] for f in Doc_example]
+            all_segment_ids = [f['segment_ids'] for f in Doc_example]
+            all_label_ids = [f['label_id'] for f in Doc_example]
+            all_doc_example.append(all_input_ids)
+            all_doc_example.append(all_input_mask)
+            all_doc_example.append(all_segment_ids)
+            all_doc_example.append(all_label_ids)
+
+            # all_input_ids = torch.tensor([f['input_ids'] for f in Doc_example], dtype=torch.long)
+            # all_input_mask = torch.tensor([f['input_mask'] for f in Doc_example], dtype=torch.long)
+            # all_segment_ids = torch.tensor([f['segment_ids'] for f in Doc_example], dtype=torch.long)
+            # all_label_ids = torch.tensor([f['label_id'] for f in Doc_example], dtype=torch.long)
+
         train_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids)
         if args.local_rank == -1:
             train_sampler = RandomSampler(train_data)
