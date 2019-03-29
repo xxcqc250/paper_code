@@ -32,6 +32,7 @@ import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from file_utils import cached_path
 
@@ -1136,25 +1137,6 @@ class BertForQuestionAnswering(PreTrainedBertModel):
         else:
             return start_logits, end_logits
 
-class BertForGenerative(PreTrainedBertModel):
-    
-    def __init__(self, config):
-        super(BertForGenerative, self).__init__(config)
-        self.bert = BertModel(config)
-        self.cls = BertOnlyMLMHead(config, self.bert.embeddings.word_embeddings.weight)
-        self.apply(self.init_bert_weights)
-
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, masked_lm_labels=None):
-        sequence_output, _ = self.bert(input_ids, token_type_ids, attention_mask,
-                                       output_all_encoded_layers=False)
-        prediction_scores = self.cls(sequence_output)
-        if masked_lm_labels is not None:
-            loss_fct = CrossEntropyLoss(ignore_index = -1)
-            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1))
-            return masked_lm_loss
-        else:
-            return prediction_scores      
-
 
 class BertForSentenceExtraction_DeepHidden(PreTrainedBertModel):
     def __init__(self, config, num_labels=2):
@@ -1180,7 +1162,9 @@ class BertForSentenceExtraction_DeepHidden(PreTrainedBertModel):
         _, pooled_output = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
         pooled_output = self.dropout(pooled_output)
         hidden_state = self.dense(pooled_output)
+        input(hidden_state.size())
         logits = self.classifier(hidden_state)
+        input(logits.size())
         logits = F.softmax(logits)
 
         if labels is not None:
@@ -1312,6 +1296,97 @@ class BertForSentenceExtraction_CNN(PreTrainedBertModel):
             return loss
         else:
             return logits
+
+
+
+class BertForSentenceExtraction_BiGRU(PreTrainedBertModel):
+    def __init__(self, config, num_labels=2,rnn_hidden_size=200):
+        super(BertForSentenceExtraction_BiGRU, self).__init__(config)
+        self.count = 0
+        self.num_labels = num_labels
+        self.bert = BertModel(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.rnn = nn.GRU(config.hidden_size, rnn_hidden_size, num_layers=2, batch_first=True) # bidirectional layer
+        # self.classifier = nn.Sequential(
+        #         nn.Linear(rnn_hidden_size, 100),
+        #         # nn.ReLU(),
+        #         nn.Tanh(),
+        #         # nn.Sigmoid(),
+        #         nn.Dropout(0.1),
+        #         nn.Linear(100, 50),
+        #         # nn.ReLU(),
+        #         nn.Tanh(),
+        #         # nn.Sigmoid(),
+        #         nn.Dropout(0.1),
+        #         nn.Linear(50, num_labels)
+        #     )
+        self.classifier = nn.Linear(rnn_hidden_size, num_labels)
+        
+        self.apply(self.init_bert_weights)
+
+    def forward(self, device, input_docs, input_doc_lens, input_doc_sentence_label=None, do_eval=False):
+        # 原本是[ Batch, 3, doc_sentence_len, sentence_len ]
+        # 轉換為[ 3, Batch, doc_sentence_len, sentence_len ]
+        input_docs = input_docs.transpose(0,1) 
+
+        # [Batch, doc_sentence_len, sentence_len]
+        input_ids_doc_batch = input_docs[0] 
+        token_type_ids_doc_batch = input_docs[1]
+        attention_mask_doc_batch = input_docs[2]
+        
+        # [doc_sentence_len, sentence_len]
+        '''
+        將每一個doc的句子丟入BERT產生vector
+        '''
+        doc_sentence_vectors = []
+        batch_len = len(input_ids_doc_batch)
+        for batch in range(batch_len):
+            input_ids = input_ids_doc_batch[batch].to(device)
+            token_type_ids = token_type_ids_doc_batch[batch].to(device)
+            attention_mask = attention_mask_doc_batch[batch].to(device)
+            _, sentence_embbed = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)            
+            sentence_embbed = self.dropout(sentence_embbed)
+            doc_sentence_vectors.append(sentence_embbed.tolist())
+
+        # Sort data by length
+        sort_order = np.argsort(input_doc_lens.tolist())[::-1]
+        doc_sentence_vectors = [doc_sentence_vectors[i] for i in sort_order]
+        input_doc_lens = [input_doc_lens.tolist()[i] for i in sort_order]
+        labels = [input_doc_sentence_label.tolist()[i] for i in sort_order]
+        
+        # 將產生出來的向量丟入CUDA
+        doc_sentence_vectors = torch.tensor(doc_sentence_vectors).to(device)
+        input_doc_lens = torch.tensor(input_doc_lens).to(device)
+        labels = torch.tensor(labels).to(device)
+
+        packed_input = pack_padded_sequence(doc_sentence_vectors, input_doc_lens, batch_first=True)
+        packed_label = pack_padded_sequence(labels, input_doc_lens, batch_first=True)
+        labels = packed_label.data
+        
+        packed_output, _ = self.rnn(packed_input) # [batch, sentence 數量, output_size]
+        rnn_output = packed_output.data
+
+
+        rnn_output = rnn_output.contiguous().view(-1, 200)
+        logits = self.classifier(rnn_output)
+        # logits = F.softmax(logits)
+        # logits = F.log_softmax(logits)
+
+
+        self.count += 1
+        if self.count % 6 == 0:
+            print(logits[:3])
+
+        weights = [0.088, 0.911]
+        class_weights = torch.FloatTensor(weights).to(device)
+        if labels is not None and do_eval is False:
+            loss_fct = CrossEntropyLoss(weight=class_weights)
+            # loss_fct = CrossEntropyLoss()
+            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            return loss
+        else:
+            return logits, labels
+
 
 class BertForSentenceExtraction_Residual_CNN(PreTrainedBertModel):
     def __init__(self, config, sequence_length, num_labels=2, out_channels=3, kernel_size=3, Conv_stride=1, MaxPool1d_kernal=3):
