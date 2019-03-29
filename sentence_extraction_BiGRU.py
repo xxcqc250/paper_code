@@ -72,17 +72,19 @@ class DataProcessor(object):
 
 class MyDataProcessor(DataProcessor):
 
-    def get_train_examples(self, data_dir):
+    def get_train_examples(self, data_dir, max_doc_sentence_len):
+        self.max_doc_sentence_len = max_doc_sentence_len
         logger.info("LOADING TRAINING DATA : {}".format(data_dir))
         with open(data_dir,'r') as f:
             data = json.load(f)
         return self._create_examples(data)
 
-    def get_dev_examples(self, data_dir):
+    def get_dev_examples(self, data_dir, max_doc_sentence_len):
+        self.max_doc_sentence_len = max_doc_sentence_len
         logger.info("LOADING EVALUATION DATA : {}".format(data_dir))
         with open(data_dir,'r') as f:
             data = json.load(f)
-        return self._create_eval_examples(data,window_size)
+        return self._create_examples(data)
 
     def InputExample(self,sentence,label):
         tmp = {}
@@ -122,10 +124,17 @@ class MyDataProcessor(DataProcessor):
                     label = 1
                 else:
                     label = 0
-                doc_example.append(self.InputExample(self.rm_punc(sentence),label))
+                if len(doc_example) < self.max_doc_sentence_len:
+                    doc_example.append(self.InputExample(self.rm_punc(sentence),label))
 
             all_examples.append(doc_example)
-        return all_examples
+
+        sentence_len = [len(ele) for ele in all_examples]
+        sort_order = np.argsort(sentence_len)[::-1]
+        all_examples = [all_examples[i] for i in sort_order]
+        all_examples_len = [len(s) for s in all_examples]
+
+        return all_examples, all_examples_len
 
     def _create_eval_examples(self,data):
         label = None
@@ -138,16 +147,23 @@ class MyDataProcessor(DataProcessor):
                     label = 1
                 else:
                     label = 0
-                doc_example.append(self.InputExample(self.rm_punc(sentence),label))
+                if len(doc_example) < self.max_doc_sentence_len:
+                    doc_example.append(self.InputExample(self.rm_punc(sentence),label))
 
             all_examples.append(doc_example)
-        return all_examples
+
+        sentence_len = [len(ele) for ele in all_examples]
+        sort_order = np.argsort(sentence_len)[::-1]
+        all_examples = [all_examples[i] for i in sort_order]
+        all_examples_len = [len(s) for s in all_examples]
+
+        return all_examples, all_examples_len
 
 
 
 
 
-def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer):
+def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer, max_doc_sentence_len):
     """Loads a data file into a list of `InputBatch`s."""
 
     label_map = {label : i for i, label in enumerate(label_list)}
@@ -199,6 +215,18 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
                                   input_mask=input_mask,
                                   segment_ids=segment_ids,
                                   label_id=label_id))
+
+
+        padding_times = max_doc_sentence_len - len(doc_feature)
+        while padding_times > 0:
+            padding_times -= 1
+            padding = [0] * max_seq_length
+            doc_feature.append(
+                    InputFeatures(input_ids=padding,
+                                  input_mask=padding,
+                                  segment_ids=padding,
+                                  label_id=0))
+        assert len(doc_feature) == max_doc_sentence_len
         features.append(doc_feature)
     return features
 
@@ -328,7 +356,10 @@ def main():
                         default=None,
                         type=str,
                         help="Using last training model")
-
+    parser.add_argument("--max_doc_sentence_len",
+                        default=32,
+                        type=int,
+                        help="Setting the max number of document of sentence")
     parser.add_argument('--start_epoch',
                         type=int,
                         default=0,
@@ -395,20 +426,30 @@ def main():
 
     train_examples = None
     num_train_optimization_steps = None
+
     if args.do_train:
+
         try:
+
             logger.info("***** Try Loading train_examples & train_features*****")
-            with open('DATA_CASHE/train_examples_BiGRU_{0}_{1}'.format( args.data_dir.split('/')[-1], args.max_seq_length),'r') as f:
+            with open('DATA_CASHE/train_examples_BiGRU_{0}_{1}_{2}'.format( args.data_dir.split('/')[-1], args.max_seq_length, args.max_doc_sentence_len),'r') as f:
                 train_examples = json.load(f)
-            with open('DATA_CASHE/train_features_BiGRU_{0}_{1}'.format(args.data_dir.split('/')[-1], args.max_seq_length),'r') as f:
+            with open('DATA_CASHE/train_examples_doc_len_BiGRU_{0}_{1}_{2}'.format( args.data_dir.split('/')[-1], args.max_seq_length, args.max_doc_sentence_len),'r') as f:
+                train_examples_doc_len = json.load(f)
+            with open('DATA_CASHE/train_features_BiGRU_{0}_{1}_{2}'.format(args.data_dir.split('/')[-1], args.max_seq_length, args.max_doc_sentence_len),'r') as f:
                 train_features = json.load(f)
+
         except:
+
             logger.info("***** Create Training Data *****")
-            train_examples = processor.get_train_examples(args.data_dir)
-            with open('DATA_CASHE/train_examples_BiGRU_{0}_{1}'.format(args.data_dir.split('/')[-1], args.max_seq_length),'w') as f:
+            train_examples, train_examples_doc_len = processor.get_train_examples(args.data_dir, args.max_doc_sentence_len)
+            with open('DATA_CASHE/train_examples_BiGRU_{0}_{1}_{2}'.format(args.data_dir.split('/')[-1], args.max_seq_length, args.max_doc_sentence_len),'w') as f:
                 json.dump(train_examples,f)
-            train_features = convert_examples_to_features(train_examples, label_list, args.max_seq_length, tokenizer)
-            with open('DATA_CASHE/train_features_BiGRU_{0}_{1}'.format(args.data_dir.split('/')[-1], args.max_seq_length),'w') as f:
+            with open('DATA_CASHE/train_examples_doc_len_BiGRU_{0}_{1}_{2}'.format(args.data_dir.split('/')[-1], args.max_seq_length, args.max_doc_sentence_len),'w') as f:
+                json.dump(train_examples_doc_len,f)
+            train_features = convert_examples_to_features(
+                train_examples, label_list, args.max_seq_length, tokenizer, args.max_doc_sentence_len)
+            with open('DATA_CASHE/train_features_BiGRU_{0}_{1}_{2}'.format(args.data_dir.split('/')[-1], args.max_seq_length, args.max_doc_sentence_len),'w') as f:
                 json.dump(train_features,f)
 
         num_train_optimization_steps = int(
@@ -421,22 +462,27 @@ def main():
         logger.info("  Num steps = %d", num_train_optimization_steps)
 
         all_doc_example = []
+        all_doc_sentence_label = []
         for Doc_example in train_features:
+            doc_tmp = []
+            doc_sentence_label_tmp = []
+
             all_input_ids = [f['input_ids'] for f in Doc_example]
             all_input_mask = [f['input_mask'] for f in Doc_example]
             all_segment_ids = [f['segment_ids'] for f in Doc_example]
             all_label_ids = [f['label_id'] for f in Doc_example]
-            all_doc_example.append(all_input_ids)
-            all_doc_example.append(all_input_mask)
-            all_doc_example.append(all_segment_ids)
-            all_doc_example.append(all_label_ids)
+            doc_tmp.append(all_input_ids)
+            doc_tmp.append(all_input_mask)
+            doc_tmp.append(all_segment_ids)            
+            all_doc_sentence_label.append(all_label_ids)
 
-            # all_input_ids = torch.tensor([f['input_ids'] for f in Doc_example], dtype=torch.long)
-            # all_input_mask = torch.tensor([f['input_mask'] for f in Doc_example], dtype=torch.long)
-            # all_segment_ids = torch.tensor([f['segment_ids'] for f in Doc_example], dtype=torch.long)
-            # all_label_ids = torch.tensor([f['label_id'] for f in Doc_example], dtype=torch.long)
+            all_doc_example.append(doc_tmp)
 
-        train_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids)
+        all_doc_len = torch.tensor(train_examples_doc_len)
+        all_doc_example = torch.tensor(all_doc_example)
+        all_doc_sentence_label = torch.tensor(all_doc_sentence_label)
+
+        train_data = TensorDataset(all_doc_example, all_doc_len, all_doc_sentence_label)
         if args.local_rank == -1:
             train_sampler = RandomSampler(train_data)
         else:
@@ -489,10 +535,11 @@ def main():
             local_loss = 0
             nb_tr_examples, nb_tr_steps = 0, 0
             for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
-                batch = tuple(t.to(device) for t in batch)
-                input_ids, input_mask, segment_ids, label_ids = batch
+                # batch = tuple(t.to(device) for t in batch)
+                batch = tuple(t for t in batch)
+                input_docs, input_doc_lens, input_doc_sentence_label = batch
                 loss = 0
-                loss = model(input_ids, segment_ids, input_mask, label_ids)
+                loss = model(device, input_docs, input_doc_lens, input_doc_sentence_label)
                 if n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
                 if args.gradient_accumulation_steps > 1:
@@ -502,7 +549,7 @@ def main():
 
                 tr_loss += loss.item()
                 local_loss += loss.item()
-                nb_tr_examples += input_ids.size(0)
+                # nb_tr_examples += input_ids.size(0)
                 nb_tr_steps += 1
                 if step % 20 == 0 and step != 0:
                     tmp = {'epoch': epoch, 'step': step, 'loss': local_loss/20.00}
@@ -533,58 +580,72 @@ def main():
                     model = BertForSentenceExtraction_BiGRU.from_pretrained(args.bert_model, state_dict=model_state_dict, num_labels=num_labels)
                     model.to(device)
 
-                    eval_examples = processor.get_dev_examples(args.eval_data_dir, window_size=args.window_size)
+                    eval_examples, eval_examples_doc_len = processor.get_dev_examples(args.eval_data_dir, args.max_doc_sentence_len)
                     eval_features = convert_examples_to_features(
-                        eval_examples, label_list, args.max_seq_length, tokenizer)
+                        eval_examples, label_list, args.max_seq_length, tokenizer, args.max_doc_sentence_len)
                     logger.info("***** Running evaluation *****")
                     logger.info("  Num examples = %d", len(eval_examples))
                     logger.info("  Batch size = %d", args.eval_batch_size)
-                    all_input_ids = torch.tensor([f['input_ids'] for f in eval_features], dtype=torch.long)
-                    all_input_mask = torch.tensor([f['input_mask'] for f in eval_features], dtype=torch.long)
-                    all_segment_ids = torch.tensor([f['segment_ids'] for f in eval_features], dtype=torch.long)
-                    all_label_ids = torch.tensor([f['label_id'] for f in eval_features], dtype=torch.long)
-                    eval_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids)
+
+                    all_doc_example = []
+                    all_doc_sentence_label = []
+                    for Doc_example in eval_features:
+                        doc_tmp = []
+                        doc_sentence_label_tmp = []
+
+                        all_input_ids = [f['input_ids'] for f in Doc_example]
+                        all_input_mask = [f['input_mask'] for f in Doc_example]
+                        all_segment_ids = [f['segment_ids'] for f in Doc_example]
+                        all_label_ids = [f['label_id'] for f in Doc_example]
+                        doc_tmp.append(all_input_ids)
+                        doc_tmp.append(all_input_mask)
+                        doc_tmp.append(all_segment_ids)            
+                        all_doc_sentence_label.append(all_label_ids)
+
+                        all_doc_example.append(doc_tmp)
+
+                    all_doc_len = torch.tensor(eval_examples_doc_len)
+                    all_doc_example = torch.tensor(all_doc_example)
+                    all_doc_sentence_label = torch.tensor(all_doc_sentence_label)
+
+                    eval_data = TensorDataset(all_doc_example, all_doc_len, all_doc_sentence_label)
                     # Run prediction for full data
                     eval_sampler = SequentialSampler(eval_data)
                     eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size)
 
                     model.eval()
+
                     eval_loss, eval_accuracy = 0, 0
                     nb_eval_steps, nb_eval_examples = 0, 0
 
                     eval_predict = []
                     eval_true = []
-                    for input_ids, input_mask, segment_ids, label_ids in tqdm(eval_dataloader, desc="Evaluating"):
-                        eval_true += label_ids.tolist()
-
-                        input_ids = input_ids.to(device)
-                        input_mask = input_mask.to(device)
-                        segment_ids = segment_ids.to(device)
-                        label_ids = label_ids.to(device)
+                    for batch in tqdm(eval_dataloader, desc="Evaluating"):
+                        
+                        batch = tuple(t for t in batch)
+                        input_docs, input_doc_lens, input_doc_sentence_label = batch
 
 
                         with torch.no_grad():
-                            tmp_eval_loss = model(input_ids, segment_ids, input_mask, label_ids)
-                            logits = model(input_ids, segment_ids, input_mask)
+                            tmp_eval_loss = model(device, input_docs, input_doc_lens, input_doc_sentence_label)
+                            logits, true_label = model(device, input_docs, input_doc_lens, input_doc_sentence_label,do_eval=True)
 
                         logits = logits.detach().cpu().numpy()
-                        label_ids = label_ids.to('cpu').numpy()
+                        true_label = true_label.to('cpu').numpy()
+                        eval_true += true_label.tolist()
 
-                        tmp_eval_accuracy = accuracy(logits, label_ids)
+                        tmp_eval_accuracy = accuracy(logits, true_label)
                         eval_predict += np.argmax(logits, axis=1).tolist()
 
                         eval_loss += tmp_eval_loss.mean().item()
                         eval_accuracy += tmp_eval_accuracy
 
-                        nb_eval_examples += input_ids.size(0)
                         nb_eval_steps += 1
 
                     # print(eval_predict)
                     eval_loss = eval_loss / nb_eval_steps
-                    eval_accuracy = eval_accuracy / nb_eval_examples
                     loss = tr_loss/nb_tr_steps if args.do_train else None
                     result = {'eval_loss': eval_loss,
-                              'eval_accuracy': eval_accuracy,
                               'global_step': global_step,
                               'loss': loss}
 
@@ -635,102 +696,6 @@ def main():
                 result = []
                 model.train()
 
-    
-    
-    if args.save_every_epoch != True:
-        # Save a trained model
-        model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
-        output_model_file = os.path.join(args.output_dir, "pytorch_model_{}.bin".format(args.output_model_name))
-        output_model_loss_file = os.path.join(args.output_dir, "model_loss_{}.txt".format(args.output_model_name))
-        logger.info("Saving model : {}".format(output_model_file))
-        torch.save(model_to_save.state_dict(), output_model_file)
-        json.dump(result, open(output_model_loss_file, "w"))
-
-    if args.do_eval and args.do_train != True:
-        output_model_file = args.use_last_model_path
-        logger.info("***** Only Do Evaluation *****")
-        logger.info("Loading model : {}".format(output_model_file))
-
-    # Load a trained model that you have fine-tuned
-    model_state_dict = torch.load(output_model_file)
-    model = BertForSentenceExtraction_BiGRU.from_pretrained(args.bert_model, state_dict=model_state_dict, num_labels=num_labels)
-    model.to(device)
-
-    if args.do_eval and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
-        eval_examples = processor.get_dev_examples(args.eval_data_dir, window_size=args.window_size)
-        eval_features = convert_examples_to_features(
-            eval_examples, label_list, args.max_seq_length, tokenizer)
-        logger.info("***** Running evaluation *****")
-        logger.info("  Num examples = %d", len(eval_examples))
-        logger.info("  Batch size = %d", args.eval_batch_size)
-        all_input_ids = torch.tensor([f['input_ids'] for f in eval_features], dtype=torch.long)
-        all_input_mask = torch.tensor([f['input_mask'] for f in eval_features], dtype=torch.long)
-        all_segment_ids = torch.tensor([f['segment_ids'] for f in eval_features], dtype=torch.long)
-        all_label_ids = torch.tensor([f['label_id'] for f in eval_features], dtype=torch.long)
-        eval_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids)
-        # Run prediction for full data
-        eval_sampler = SequentialSampler(eval_data)
-        eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size)
-
-        model.eval()
-        eval_loss, eval_accuracy = 0, 0
-        nb_eval_steps, nb_eval_examples = 0, 0
-
-        eval_predict = []
-        eval_true = []
-        for input_ids, input_mask, segment_ids, label_ids in tqdm(eval_dataloader, desc="Evaluating"):
-            eval_true += label_ids.tolist()
-
-            input_ids = input_ids.to(device)
-            input_mask = input_mask.to(device)
-            segment_ids = segment_ids.to(device)
-            label_ids = label_ids.to(device)
-
-
-            with torch.no_grad():
-                tmp_eval_loss = model(input_ids, segment_ids, input_mask, label_ids)
-                logits = model(input_ids, segment_ids, input_mask)
-
-            logits = logits.detach().cpu().numpy()
-            label_ids = label_ids.to('cpu').numpy()
-
-            tmp_eval_accuracy = accuracy(logits, label_ids)
-            eval_predict += np.argmax(logits, axis=1).tolist()
-
-            eval_loss += tmp_eval_loss.mean().item()
-            eval_accuracy += tmp_eval_accuracy
-
-            nb_eval_examples += input_ids.size(0)
-            nb_eval_steps += 1
-
-        # print(eval_predict)
-        eval_loss = eval_loss / nb_eval_steps
-        eval_accuracy = eval_accuracy / nb_eval_examples
-        loss = tr_loss/nb_tr_steps if args.do_train else None
-        result = {'eval_loss': eval_loss,
-                  'eval_accuracy': eval_accuracy,
-                  'global_step': global_step,
-                  'loss': loss}
-
-        label_recall = recall_score(eval_true, eval_predict,average=None)
-        label_confusion_matrix = confusion_matrix(eval_true, eval_predict).ravel()
-        Pr,Re,F1,_ = precision_recall_fscore_support(eval_true, eval_predict, average='weighted')
-        output_eval_file = os.path.join(args.output_dir, "eval_results_{}.txt".format(args.output_model_name))
-        with open(output_eval_file, "w") as writer:
-            writer.write("****** eval_results_{}.txt ******\n\n".format(args.output_model_name))
-            logger.info("***** Eval results *****")
-            logger.info("Precision : {}".format(Pr))
-            logger.info("Recall : {}".format(Re))
-            logger.info("F1 : {}".format(F1))
-            for key in sorted(result.keys()):
-                logger.info("  %s = %s", key, str(result[key]))
-                writer.write("%s = %s\n\n" % (key, str(result[key])))
-            writer.write("Precision : {}\nRecall : {}\nF1 : {}\n\n".format(Pr,Re,F1))
-            writer.write("label 0 Recall : {}\nlabel 1 Recall : {}\n\n".format(label_recall[0],label_recall[1]))
-            writer.write("tn : {}  把0判給0\n".format(label_confusion_matrix[0]))
-            writer.write("fp : {}  把0判給1\n".format(label_confusion_matrix[1]))
-            writer.write("fn : {}  把1判給0\n".format(label_confusion_matrix[2]))
-            writer.write("tp : {}  把1判給1".format(label_confusion_matrix[3]))
 
 
 if __name__ == "__main__":
