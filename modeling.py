@@ -1374,7 +1374,7 @@ class BertForSentenceExtraction_BiGRU(PreTrainedBertModel):
 
 
         self.count += 1
-        if self.count % 6 == 0:
+        if self.count % 20 == 0:
             print(logits[:3])
 
         weights = [0.088, 0.911]
