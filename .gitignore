@@ -7,3 +7,13 @@ absetact_data/*
 __pycache__/*
 BBC_News_Summary/*
 testing_output/*
+DATA_CASHE/*
+SummaRuNNer_dataset/*
+gold_standard/*
+output_BERT_BiGRU/*
+output_BERT_CNN/*
+output_ver5/*
+output_ver6/*
+predict_model.py
+predict_result/*
+test/*
