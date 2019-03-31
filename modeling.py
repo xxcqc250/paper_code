@@ -1144,31 +1144,31 @@ class BertForSentenceExtraction_DeepHidden(PreTrainedBertModel):
         self.num_labels = num_labels
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.dense = nn.Sequential(
-                nn.Linear(config.hidden_size, 400),
-                nn.ReLU(),
-                nn.Dropout(0.3),
-                nn.Linear(400, 200),
-                nn.ReLU(),
-                nn.Dropout(0.3),
-                nn.Linear(200, 50),
-                nn.ReLU(),
-                nn.Dropout(0.3)
-            )
-        self.classifier = nn.Linear(50, num_labels)
+        # self.dense = nn.Sequential(
+        #         nn.Linear(config.hidden_size, 400),
+        #         nn.ReLU(),
+        #         nn.Dropout(0.3),
+        #         nn.Linear(400, 200),
+        #         nn.ReLU(),
+        #         nn.Dropout(0.3),
+        #         nn.Linear(200, 50),
+        #         nn.ReLU(),
+        #         nn.Dropout(0.3)
+        #     )
+        self.classifier = nn.Linear(config.hidden_size, num_labels)
         self.apply(self.init_bert_weights)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None):
         _, pooled_output = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
-        pooled_output = self.dropout(pooled_output)
-        hidden_state = self.dense(pooled_output)
-        input(hidden_state.size())
+        hidden_state = self.dropout(pooled_output)
+        # hidden_state = self.dense(pooled_output)
         logits = self.classifier(hidden_state)
-        input(logits.size())
-        logits = F.softmax(logits)
+        # logits = F.softmax(logits)
 
+        weights = [0.2, 0.8]
+        class_weights = torch.FloatTensor(weights).cuda()
         if labels is not None:
-            loss_fct = CrossEntropyLoss()
+            loss_fct = CrossEntropyLoss(weight=class_weights)
             loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             return loss
         else:
@@ -1359,10 +1359,12 @@ class BertForSentenceExtraction_BiGRU(PreTrainedBertModel):
         input_doc_lens = torch.tensor(input_doc_lens).to(device)
         labels = torch.tensor(labels).to(device)
 
+        # input(doc_sentence_vectors.size())
         packed_input = pack_padded_sequence(doc_sentence_vectors, input_doc_lens, batch_first=True)
         packed_label = pack_padded_sequence(labels, input_doc_lens, batch_first=True)
         labels = packed_label.data
         
+        # input(packed_input.data.size())
         packed_output, _ = self.rnn(packed_input) # [batch, sentence 數量, output_size]
         rnn_output = packed_output.data
 

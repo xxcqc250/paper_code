@@ -449,7 +449,7 @@ def main():
             train_features = convert_examples_to_features(train_examples, label_list, args.max_seq_length, tokenizer)
             with open('DATA_CASHE/{0}_{1}_{2}_{3}'.format('train_features',args.data_dir.split('/')[-1], args.max_seq_length, args.window_size),'w') as f:
                 json.dump(train_features,f)
-        exit()
+        
         num_train_optimization_steps = int(
             len(train_examples) / args.train_batch_size / args.gradient_accumulation_steps) * args.num_train_epochs
         if args.local_rank != -1:
