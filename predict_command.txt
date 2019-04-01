@@ -1,3 +1,21 @@
+python3 predict_SE_BiGRU.py  \
+--do_eval  \
+--eval_data_dir /notebooks/papers/my_code/absetact_data/cnndm_R1_eval_split_100_0.json   \
+--eval_batch_size 1 \
+--do_lower_case \
+--bert_model bert-base-uncased   \
+--max_seq_length 64   \
+--learning_rate 2e-5   \
+--num_train_epochs 10.0   \
+--output_result_path /notebooks/papers/my_code/output_BERT_BiGRU/doc_5000/eval_rouge_result.txt \
+--model_dir_path /notebooks/papers/my_code/output_BERT_BiGRU/doc_5000/ \
+--model_name doc_5000 \
+--gpu_device 1 \
+--max_doc_sentence_len 40 \
+--start_epochs 0 \
+--end_epochs 0
+
+
 python3 predict_SE_CNN.py  \
 --do_eval  \
 --eval_data_dir /notebooks/papers/my_code/gold_standard/testing_100.json   \

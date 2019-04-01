@@ -1165,7 +1165,7 @@ class BertForSentenceExtraction_DeepHidden(PreTrainedBertModel):
         logits = self.classifier(hidden_state)
         # logits = F.softmax(logits)
 
-        weights = [0.2, 0.8]
+        weights = [0.4, 1]
         class_weights = torch.FloatTensor(weights).cuda()
         if labels is not None:
             loss_fct = CrossEntropyLoss(weight=class_weights)
@@ -1374,10 +1374,6 @@ class BertForSentenceExtraction_BiGRU(PreTrainedBertModel):
         # logits = F.softmax(logits)
         # logits = F.log_softmax(logits)
 
-
-        self.count += 1
-        if self.count % 20 == 0:
-            print(logits[:3])
 
         weights = [0.088, 0.911]
         class_weights = torch.FloatTensor(weights).to(device)
