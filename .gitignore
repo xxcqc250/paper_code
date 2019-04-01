@@ -17,3 +17,4 @@ output_ver6/*
 predict_model.py
 predict_result/*
 test/*
+output_DNN_WeightClass/*

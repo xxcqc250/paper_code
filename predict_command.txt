@@ -1,53 +1,51 @@
 python3 predict_SE_BiGRU.py  \
 --do_eval  \
---eval_data_dir /notebooks/papers/my_code/absetact_data/cnndm_R1_eval_split_100_0.json   \
+--eval_data_dir /notebooks/papers/my_code/gold_standard/testing_100_split_0_ext.json   \
 --eval_batch_size 1 \
 --do_lower_case \
 --bert_model bert-base-uncased   \
 --max_seq_length 64   \
---learning_rate 2e-5   \
---num_train_epochs 10.0   \
---output_result_path /notebooks/papers/my_code/output_BERT_BiGRU/doc_5000/eval_rouge_result.txt \
+--output_result_path /notebooks/papers/my_code/output_BERT_BiGRU/doc_5000/eval_extract_rouge_result_0.txt \
 --model_dir_path /notebooks/papers/my_code/output_BERT_BiGRU/doc_5000/ \
 --model_name doc_5000 \
 --gpu_device 1 \
 --max_doc_sentence_len 40 \
 --start_epochs 0 \
---end_epochs 0
+--end_epochs 9
 
 
 python3 predict_SE_CNN.py  \
 --do_eval  \
---eval_data_dir /notebooks/papers/my_code/gold_standard/testing_100.json   \
+--eval_data_dir /notebooks/papers/my_code/gold_standard/testing_100_split_7_ext.json   \
 --eval_batch_size 8 \
 --do_lower_case \
 --bert_model bert-base-uncased   \
 --max_seq_length 256   \
 --window_size 2 \
---output_result_path /notebooks/papers/my_code/output_BERT_CNN/result_kernel_5_filter_20/eval_rouge_result.txt \
---gpu_device 1 \
---out_channels 20 \
---kernel_size 5 \
+--output_result_path /notebooks/papers/my_code/output_BERT_CNN/result_kernel_3_filter_40/eval_extract_rouge_result_7.txt \
+--gpu_device 0 \
+--out_channels 40 \
+--kernel_size 3 \
 --predict_multi_model \
---model_dir_path /notebooks/papers/my_code/output_BERT_CNN/result_kernel_5_filter_20/ \
---model_name BERT_CNN \
---start_epochs 12 \
---end_epochs 19 
+--model_dir_path /notebooks/papers/my_code/output_BERT_CNN/result_kernel_3_filter_40/ \
+--model_name BERT_CNN_k3_f40 \
+--start_epochs 0 \
+--end_epochs 9 
 
 
 
 python3 predict_SE_DNN.py  \
 --do_eval  \
---eval_data_dir /notebooks/papers/my_code/gold_standard/testing_100.json   \
+--eval_data_dir /notebooks/papers/my_code/gold_standard/testing_100_split_1_ext.json   \
 --eval_batch_size 8 \
 --do_lower_case \
 --bert_model bert-base-uncased   \
 --max_seq_length 256   \
 --window_size 2 \
---output_result_path /notebooks/papers/my_code/output_ver6/window_2_doc_20000/eval_rouge_result.txt \
+--output_result_path /notebooks/papers/my_code/output_DNN_WeightClass/doc_5k/eval_extract_rouge_result_1.txt \
 --gpu_device 1 \
 --predict_multi_model \
---model_dir_path /notebooks/papers/my_code/output_ver6/window_2_doc_20000/ \
---model_name window_2_doc_20000 \
---start_epochs 7 \
---end_epochs 9 
+--model_dir_path /notebooks/papers/my_code/output_DNN_WeightClass/doc_5k/ \
+--model_name doc_5k \
+--start_epochs 0 \
+--end_epochs 8 

@@ -114,7 +114,7 @@ class MyDataProcessor(DataProcessor):
 
                 if len(doc_example) < self.max_doc_sentence_len:
 
-                    if sentence in ele['target']:
+                    if sentence in ele['summary']:
                         label = 1
                         doc_summary.append(sentence)
                     else:
@@ -479,7 +479,7 @@ def main():
                     rouge_1 += rouge_score[0]['rouge-1']['f']
                     rouge_2 += rouge_score[0]['rouge-2']['f']
                     rouge_L += rouge_score[0]['rouge-l']['f']
-                    
+
                 except:
                     skip += 1
                 
@@ -495,10 +495,10 @@ def main():
             print(final_rouge_1, final_rouge_2, final_rouge_L)
             print(skip_rouge_1, skip_rouge_2, skip_rouge_L)
             print("output path :",args.output_result_path)
-            # with open(args.output_result_path,'a') as f:
-            #     f.write('Using model : {}\n'.format(eval_model_file))
-            #     f.write('ROUGE_1 : {}, ROUGE_2 : {}, ROUGE_L : {}\n'.format(final_rouge_1,final_rouge_2,final_rouge_L))
-            #     f.write('S_ROUGE_1 : {}, S_ROUGE_2 : {}, S_ROUGE_L : {}\n\n\n'.format(skip_rouge_1,skip_rouge_2,skip_rouge_L))
+            with open(args.output_result_path,'a') as f:
+                f.write('Using model : {}\n'.format(eval_model_file))
+                f.write('ROUGE_1 : {}, ROUGE_2 : {}, ROUGE_L : {}\n'.format(final_rouge_1,final_rouge_2,final_rouge_L))
+                f.write('S_ROUGE_1 : {}, S_ROUGE_2 : {}, S_ROUGE_L : {}\n\n\n'.format(skip_rouge_1,skip_rouge_2,skip_rouge_L))
 
 if __name__ == "__main__":
     main()
