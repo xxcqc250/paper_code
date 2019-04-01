@@ -105,48 +105,33 @@ class MyDataProcessor(DataProcessor):
         
         label = None
         all_examples = []
+        all_summary = []
         for idx,ele in tqdm(enumerate(data),desc='Loading Data'):
 
             doc_example = []
+            doc_summary = []
             for sentence in ele['context']:
-                if sentence in ele['target']:
-                    label = 1
-                else:
-                    label = 0
+
                 if len(doc_example) < self.max_doc_sentence_len:
+
+                    if sentence in ele['target']:
+                        label = 1
+                        doc_summary.append(sentence)
+                    else:
+                        label = 0
                     doc_example.append(self.InputExample(self.rm_punc(sentence),label))
 
+            all_summary.append(self.rm_punc(" ".join(doc_summary)))
             all_examples.append(doc_example)
 
         sentence_len = [len(ele) for ele in all_examples]
         sort_order = np.argsort(sentence_len)[::-1]
         all_examples = [all_examples[i] for i in sort_order]
+        all_summary = [all_summary[i] for i in sort_order]
         all_examples_len = [len(s) for s in all_examples]
 
-        return all_examples, all_examples_len
+        return all_examples, all_examples_len, all_summary
 
-    def _create_eval_examples(self,data):
-        label = None
-        all_examples = []
-        for idx,ele in tqdm(enumerate(data),desc='Loading Data'):
-
-            doc_example = []
-            for sentence in ele['context']:
-                if sentence in ele['target']:
-                    label = 1
-                else:
-                    label = 0
-                if len(doc_example) < self.max_doc_sentence_len:
-                    doc_example.append(self.InputExample(self.rm_punc(sentence),label))
-
-            all_examples.append(doc_example)
-
-        sentence_len = [len(ele) for ele in all_examples]
-        sort_order = np.argsort(sentence_len)[::-1]
-        all_examples = [all_examples[i] for i in sort_order]
-        all_examples_len = [len(s) for s in all_examples]
-
-        return all_examples, all_examples_len
 
 
 
@@ -422,9 +407,8 @@ def main():
         model = BertForSentenceExtraction_BiGRU.from_pretrained(args.bert_model, state_dict=model_state_dict, num_labels=num_labels)
         
         model.to(device)
-
         if args.do_eval and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
-            eval_examples, eval_examples_doc_len = processor.get_dev_examples(args.eval_data_dir, args.max_doc_sentence_len)
+            eval_examples, eval_examples_doc_len, all_summary = processor.get_dev_examples(args.eval_data_dir, args.max_doc_sentence_len)
             eval_features = convert_examples_to_features(
                 eval_examples, label_list, args.max_seq_length, tokenizer, args.max_doc_sentence_len)
 
@@ -458,86 +442,63 @@ def main():
             eval_sampler = SequentialSampler(eval_data)
             eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size)
 
+            model.eval()
             rouge_1, rouge_2, rouge_L = 0, 0, 0
+            eval_loss, eval_accuracy = 0, 0
             skip = 0
-            for doc_examples in tqdm(eval_examples,desc='Examples'):
-                # print(len(doc_examples))
-                gold_summary = doc_examples[0].summ_text
+            eval_predict = []
+            eval_true = []
+            # print(all_doc_len)
+            for index, batch in tqdm(enumerate(eval_dataloader), desc="Evaluating"):
+                batch = tuple(t for t in batch)
+                input_docs, input_doc_lens, input_doc_sentence_label = batch
 
-                eval_features = convert_examples_to_features(
-                    doc_examples, label_list, args.max_seq_length, tokenizer)
-            
-                all_input_ids = torch.tensor([f.input_ids for f in eval_features], dtype=torch.long)
-                all_input_mask = torch.tensor([f.input_mask for f in eval_features], dtype=torch.long)
-                all_segment_ids = torch.tensor([f.segment_ids for f in eval_features], dtype=torch.long)
-                all_label_ids = torch.tensor([f.label_id for f in eval_features], dtype=torch.long)
-                eval_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids)
-                # Run prediction for full data
-                eval_sampler = SequentialSampler(eval_data)
-                eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size)
+                assert input_doc_lens[0].tolist() == all_doc_len[index].tolist()
 
-                model.eval()
-                # eval_loss, eval_accuracy = 0, 0
-                # nb_eval_steps, nb_eval_examples = 0, 0
+                with torch.no_grad():
+                    tmp_eval_loss = model(device, input_docs, input_doc_lens, input_doc_sentence_label)
+                    logits, true_label = model(device, input_docs, input_doc_lens, input_doc_sentence_label,do_eval=True)
+                
+                logits = logits.detach().cpu().numpy()
+                true_label = true_label.to('cpu').numpy().tolist()
+                eval_true += true_label
 
-                # eval_predict = []
-                # eval_true = []
-                predict_label = []
+                tmp_eval_accuracy = accuracy(logits, true_label)
+                predict_label = np.argmax(logits, axis=1).tolist()
+                eval_predict += predict_label
 
-                for input_ids, input_mask, segment_ids, label_ids in tqdm(eval_dataloader, desc="Evaluating"):
-                    # eval_true += label_ids.tolist()
+                eval_loss += tmp_eval_loss.mean().item()
+                eval_accuracy += tmp_eval_accuracy
+                
+                predict_sentence = [eval_examples[index][idx]['sentence'] for idx,i in enumerate(predict_label) if i == 1]
+                true_sentence = [eval_examples[index][idx]['sentence'] for idx,i in enumerate(true_label) if i == 1]
+                gold_summary = all_summary[index]
 
-                    input_ids = input_ids.to(device)
-                    input_mask = input_mask.to(device)
-                    segment_ids = segment_ids.to(device)
-                    # label_ids = label_ids.to(device)
-
-
-                    with torch.no_grad():
-                        # tmp_eval_loss = model(input_ids, segment_ids, input_mask, label_ids)
-                        logits = model(input_ids, segment_ids, input_mask)
-
-                    logits = logits.detach().cpu().numpy()
-                    # label_ids = label_ids.to('cpu').numpy()
-
-                    # tmp_eval_accuracy = accuracy(logits, label_ids)
-                    predict_label += np.argmax(logits, axis=1).tolist()
-                # print(len(predict_label))
-
-                extract_sentence = [doc_examples[idx].target_text for idx,p_label in enumerate(predict_label) if p_label==1]
-
-                temp = extract_sentence
-                extract_sentence = []
-                for s in temp:
-                    if s not in extract_sentence:
-                        extract_sentence.append(s)
-
-                # extract_sentence = list(set(extract_sentence))
-                # print(list(set(extract_sentence)))
                 try:
-                    rouge_score = Rouge().get_scores(gold_summary," ".join(extract_sentence))
+                    rouge_score = Rouge().get_scores(gold_summary," ".join(predict_sentence))
                     rouge_1 += rouge_score[0]['rouge-1']['f']
                     rouge_2 += rouge_score[0]['rouge-2']['f']
                     rouge_L += rouge_score[0]['rouge-l']['f']
+                    
                 except:
                     skip += 1
-            
+                
             final_rouge_1 = round(rouge_1/len(eval_examples),4)
             final_rouge_2 = round(rouge_2/len(eval_examples),4)
             final_rouge_L = round(rouge_L/len(eval_examples),4)
 
-            skip_rouge_1 = round(rouge_1/(len(eval_examples)-skip),4)
-            skip_rouge_2 = round(rouge_2/(len(eval_examples)-skip),4)
-            skip_rouge_L = round(rouge_L/(len(eval_examples)-skip),4)
+            skip_rouge_1 = round(rouge_1/(len(eval_examples)-skip),4) if len(eval_examples)-skip != 0 else 0
+            skip_rouge_2 = round(rouge_2/(len(eval_examples)-skip),4) if len(eval_examples)-skip != 0 else 0
+            skip_rouge_L = round(rouge_L/(len(eval_examples)-skip),4) if len(eval_examples)-skip != 0 else 0
 
             print('Using model :',eval_model_file)
             print(final_rouge_1, final_rouge_2, final_rouge_L)
             print(skip_rouge_1, skip_rouge_2, skip_rouge_L)
             print("output path :",args.output_result_path)
-            with open(args.output_result_path,'a') as f:
-                f.write('Using model : {}\n'.format(eval_model_file))
-                f.write('ROUGE_1 : {}, ROUGE_2 : {}, ROUGE_L : {}\n'.format(final_rouge_1,final_rouge_2,final_rouge_L))
-                f.write('S_ROUGE_1 : {}, S_ROUGE_2 : {}, S_ROUGE_L : {}\n\n\n'.format(skip_rouge_1,skip_rouge_2,skip_rouge_L))
+            # with open(args.output_result_path,'a') as f:
+            #     f.write('Using model : {}\n'.format(eval_model_file))
+            #     f.write('ROUGE_1 : {}, ROUGE_2 : {}, ROUGE_L : {}\n'.format(final_rouge_1,final_rouge_2,final_rouge_L))
+            #     f.write('S_ROUGE_1 : {}, S_ROUGE_2 : {}, S_ROUGE_L : {}\n\n\n'.format(skip_rouge_1,skip_rouge_2,skip_rouge_L))
 
 if __name__ == "__main__":
     main()
