@@ -1375,7 +1375,7 @@ class BertForSentenceExtraction_BiGRU(PreTrainedBertModel):
         # logits = F.log_softmax(logits)
 
 
-        weights = [0.088, 0.911]
+        weights = [0.1, 1]
         class_weights = torch.FloatTensor(weights).to(device)
         if labels is not None and do_eval is False:
             loss_fct = CrossEntropyLoss(weight=class_weights)

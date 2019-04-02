@@ -18,3 +18,4 @@ predict_model.py
 predict_result/*
 test/*
 output_DNN_WeightClass/*
+output_BERT_BiGRU_window_slide/*
