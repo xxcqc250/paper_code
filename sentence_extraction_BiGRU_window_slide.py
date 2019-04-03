@@ -664,7 +664,12 @@ def main():
                         writer.write("tn : {}  把0判給0\n".format(label_confusion_matrix[0]))
                         writer.write("fp : {}  把0判給1\n".format(label_confusion_matrix[1]))
                         writer.write("fn : {}  把1判給0\n".format(label_confusion_matrix[2]))
-                        writer.write("tp : {}  把1判給1".format(label_confusion_matrix[3]))
+                        writer.write("tp : {}  把1判給1\n\n".format(label_confusion_matrix[3]))
+
+                        jsonString = json.dumps(eval_true)
+                        writer.write("True Label : {}\n\n".format(jsonString))
+                        jsonString = json.dumps(eval_predict)
+                        writer.write("Predict Label : {}\n\n".format(jsonString))                        
 
                 # Prepare model
                 # 載入之前的model
